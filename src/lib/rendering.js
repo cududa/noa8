@@ -4,6 +4,15 @@ import { makeProfileHook } from './util'
 
 import { SceneOctreeManager } from './sceneOctreeManager'
 
+// Babylon 8 expects materials to expose needAlphaTestingForMesh; add a backward-compatible shim
+import { Material } from '@babylonjs/core/Materials/material'
+if (typeof Material.prototype.needAlphaTestingForMesh !== 'function') {
+    Material.prototype.needAlphaTestingForMesh = function (mesh) {
+        // @ts-ignore older materials expose needAlphaTesting
+        return (typeof this.needAlphaTesting === 'function') ? this.needAlphaTesting() : false
+    }
+}
+
 import { Scene, ScenePerformancePriority } from '@babylonjs/core/scene'
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera'
 import { Engine } from '@babylonjs/core/Engines/engine'
@@ -258,6 +267,10 @@ var hlpos = []
  */
 Rendering.prototype.addMeshToScene = function (mesh, isStatic = false, pos = null, containingChunk = null) {
     if (!mesh.metadata) mesh.metadata = {}
+    // Babylon 8 expects meshes to have a _currentLOD map; ensure it exists for any mesh added
+    if (mesh._internalAbstractMeshDataInfo && !mesh._internalAbstractMeshDataInfo._currentLOD) {
+        mesh._internalAbstractMeshDataInfo._currentLOD = new Map()
+    }
 
     // if mesh is already added, just make sure it's visisble
     if (mesh.metadata[addedToSceneFlag]) {
