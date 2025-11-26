@@ -299,13 +299,22 @@ class FlowAnimationPlugin extends MaterialPluginBase {
         this._flowDirection = flowDirection.slice() // copy array
         this._patternLength = patternLength
         this._time = 0
+        this._renderObserver = null
 
         // hook into scene render loop to update time
         var scene = material.getScene()
-        scene.onBeforeRenderObservable.add(() => {
+        this._renderObserver = scene.onBeforeRenderObservable.add(() => {
             // delta time is in milliseconds, convert to seconds
             var dt = scene.getEngine().getDeltaTime() / 1000
             this._time += dt
+        })
+
+        // Clean up observer when material is disposed to prevent memory leaks
+        material.onDisposeObservable.add(() => {
+            if (this._renderObserver) {
+                scene.onBeforeRenderObservable.remove(this._renderObserver)
+                this._renderObserver = null
+            }
         })
     }
 
