@@ -62,7 +62,7 @@ export class Registry {
         var matColorLookup = [null]
         var matAtlasIndexLookup = [-1]
 
-        /** 
+        /**
          * Lookup array of block face material properties - keyed by matID (not blockID)
          * @typedef MatDef
          * @prop {number[]} color
@@ -71,6 +71,8 @@ export class Registry {
          * @prop {boolean} texHasAlpha
          * @prop {number} atlasIndex
          * @prop {*} renderMat
+         * @prop {number} flowSpeed
+         * @prop {number[]} flowDirection
          */
         /** @type {MatDef[]} */
         var matDefs = []
@@ -199,6 +201,8 @@ export class Registry {
                 texHasAlpha: !!opts.texHasAlpha,
                 atlasIndex: opts.atlasIndex,
                 renderMat: opts.renderMaterial,
+                flowSpeed: opts.flowSpeed || 0,
+                flowDirection: opts.flowDirection || [1, 0, 0],
             }
             return matID
         }
@@ -411,4 +415,16 @@ function MaterialOptions() {
      * will be rendered with the supplied material (this can impact performance).
      */
     this.renderMaterial = null
+    /**
+     * Flow/conveyor animation speed in blocks per second. If > 0, the material
+     * will animate smoothly. Default is 0 (no animation).
+     * @type {number}
+     */
+    this.flowSpeed = 0
+    /**
+     * Flow/conveyor animation direction as [x, y, z]. Only used if flowSpeed > 0.
+     * Example: [1, 0, 0] flows in +X direction, [0, 0, -1] flows in -Z direction.
+     * @type {number[]}
+     */
+    this.flowDirection = [1, 0, 0]
 }

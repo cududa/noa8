@@ -85,9 +85,9 @@ export class TerrainMatManager {
  * 
 */
 
-/** 
+/**
  * Decide a unique terrainID, based on block material ID properties
- * @param {TerrainMatManager} self 
+ * @param {TerrainMatManager} self
 */
 function decideTerrainMatID(self, blockMatID = 0) {
     var matInfo = self.noa.registry.getMaterialData(blockMatID)
@@ -99,6 +99,11 @@ function decideTerrainMatID(self, blockMatID = 0) {
             self._renderMatToTerrainID.set(mat, self._idCounter++)
         }
         return self._renderMatToTerrainID.get(mat)
+    }
+
+    // animated materials get unique terrain IDs since they need their own material instance
+    if (matInfo.flowSpeed > 0) {
+        return self._idCounter++
     }
 
     // ditto for textures, unique URL
@@ -119,9 +124,9 @@ function decideTerrainMatID(self, blockMatID = 0) {
 }
 
 
-/** 
+/**
  * Create (choose) a material for a given set of block material properties
- * @param {TerrainMatManager} self 
+ * @param {TerrainMatManager} self
 */
 function createTerrainMat(self, blockMatID = 0) {
     var matInfo = self.noa.registry.getMaterialData(blockMatID)
@@ -129,14 +134,23 @@ function createTerrainMat(self, blockMatID = 0) {
     // custom render mats are just reused
     if (matInfo.renderMat) return matInfo.renderMat
 
-    // if no texture: use a basic flat material, possibly with alpha
+    var isAnimated = (matInfo.flowSpeed > 0)
+
+    // if no texture: use a basic flat material, possibly with alpha or animation
     if (!matInfo.texture) {
         var needsAlpha = (matInfo.alpha > 0 && matInfo.alpha < 1)
-        if (!needsAlpha) return self._defaultMat
-        var matName = 'terrain-alpha-' + blockMatID
+        if (!needsAlpha && !isAnimated) return self._defaultMat
+        var matName = 'terrain-' + (isAnimated ? 'animated-' : 'alpha-') + blockMatID
         var plainMat = self.noa.rendering.makeStandardMaterial(matName)
         plainMat.alpha = matInfo.alpha
-        plainMat.freeze()
+
+        // add flow animation plugin if needed
+        if (isAnimated) {
+            new FlowAnimationPlugin(plainMat, matInfo.flowSpeed, matInfo.flowDirection)
+            // animated materials can't be frozen since uniforms update each frame
+        } else {
+            plainMat.freeze()
+        }
         return plainMat
     }
 
@@ -158,7 +172,14 @@ function createTerrainMat(self, blockMatID = 0) {
         }
     }
 
-    mat.freeze()
+    // add flow animation plugin if needed
+    if (isAnimated) {
+        new FlowAnimationPlugin(mat, matInfo.flowSpeed, matInfo.flowDirection)
+        // animated materials can't be frozen since uniforms update each frame
+    } else {
+        mat.freeze()
+    }
+
     return mat
 }
 
@@ -253,6 +274,77 @@ class TerrainMaterialPlugin extends MaterialPluginBase {
             'CUSTOM_FRAGMENT_DEFINITIONS': `
                 uniform highp sampler2DArray atlasTexture;
                 varying float texAtlasIndex;
+            `,
+        }
+        return null
+    }
+}
+
+
+/**
+ *
+ *      Flow Animation Plugin - adds vertex offset for conveyor belt effect
+ *
+*/
+
+class FlowAnimationPlugin extends MaterialPluginBase {
+    constructor(material, flowSpeed, flowDirection) {
+        var priority = 100
+        var defines = { 'NOA_FLOW_ANIMATION': false }
+        super(material, 'FlowAnimationPlugin', priority, defines)
+        this._enable(true)
+
+        this._flowSpeed = flowSpeed
+        this._flowDirection = flowDirection.slice() // copy array
+        this._time = 0
+
+        // hook into scene render loop to update time
+        var scene = material.getScene()
+        scene.onBeforeRenderObservable.add(() => {
+            // delta time is in milliseconds, convert to seconds
+            var dt = scene.getEngine().getDeltaTime() / 1000
+            this._time += dt
+        })
+    }
+
+    prepareDefines(defines, scene, mesh) {
+        defines['NOA_FLOW_ANIMATION'] = true
+    }
+
+    getClassName() {
+        return 'FlowAnimationPlugin'
+    }
+
+    getUniforms() {
+        return {
+            ubo: [
+                { name: 'flowTime', size: 1, type: 'float' },
+                { name: 'flowDirection', size: 3, type: 'vec3' },
+                { name: 'flowSpeed', size: 1, type: 'float' },
+            ]
+        }
+    }
+
+    bindForSubMesh(uniformBuffer, scene, engine, subMesh) {
+        uniformBuffer.updateFloat('flowTime', this._time)
+        uniformBuffer.updateFloat3('flowDirection',
+            this._flowDirection[0],
+            this._flowDirection[1],
+            this._flowDirection[2])
+        uniformBuffer.updateFloat('flowSpeed', this._flowSpeed)
+    }
+
+    getCustomCode(shaderType) {
+        if (shaderType === 'vertex') return {
+            'CUSTOM_VERTEX_DEFINITIONS': `
+                uniform float flowTime;
+                uniform vec3 flowDirection;
+                uniform float flowSpeed;
+            `,
+            'CUSTOM_VERTEX_MAIN_BEGIN': `
+                // Apply flow offset with wrapping
+                float flowOffset = fract(flowTime * flowSpeed);
+                positionUpdated += flowDirection * flowOffset;
             `,
         }
         return null

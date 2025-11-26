@@ -73,6 +73,8 @@ export class Registry {
         texHasAlpha: boolean;
         atlasIndex: number;
         renderMat: any;
+        flowSpeed: number;
+        flowDirection: number[];
     };
     /**
      * Given a texture URL, does any material using that
@@ -164,5 +166,17 @@ declare class MaterialOptions {
      * will be rendered with the supplied material (this can impact performance).
      */
     renderMaterial: any;
+    /**
+     * Flow/conveyor animation speed in blocks per second. If > 0, the material
+     * will animate smoothly. Default is 0 (no animation).
+     * @type {number}
+     */
+    flowSpeed: number;
+    /**
+     * Flow/conveyor animation direction as [x, y, z]. Only used if flowSpeed > 0.
+     * Example: [1, 0, 0] flows in +X direction, [0, 0, -1] flows in -Z direction.
+     * @type {number[]}
+     */
+    flowDirection: number[];
 }
 export {};
