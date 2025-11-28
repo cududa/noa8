@@ -58,6 +58,8 @@ export class Engine extends EventEmitter {
     /** @internal */
     _paused: boolean;
     /** @internal */
+    _disposed: boolean;
+    /** @internal */
     _originRebaseDistance: any;
     /** @internal */
     worldOriginOffset: number[];
@@ -149,7 +151,20 @@ export class Engine extends EventEmitter {
         _localPosition: number[];
         position: number[];
         normal: number[];
+        _blockID: any;
     };
+    /** @internal */
+    _gpuPickResult: {
+        _localPosition: number[];
+        position: number[];
+        normal: number[];
+        _blockID: any;
+    };
+    /** @internal */
+    _pickTestFunction: (id: any) => boolean;
+    /** @internal */
+    _pickTestVoxel: (x: any, y: any, z: any) => boolean;
+    _cleanupDebugGlobals: () => void;
     /** @internal */
     vec3: typeof vec3;
     /** @internal */
@@ -184,6 +199,8 @@ export class Engine extends EventEmitter {
      * Adds a block, unless there's an entity in the way.
     */
     addBlock(id: any, x: any, y?: number, z?: number): any;
+    /** Dispose all engine resources and detach DOM/global hooks */
+    dispose(): void;
     /**
      * Precisely converts a world position to the current internal
      * local frame of reference.
@@ -223,8 +240,8 @@ export class Engine extends EventEmitter {
      * @param {(id:number) => boolean} blockTestFunction which voxel IDs can be picked (default: any solid voxel)
     */
     pick(pos?: number[], dir?: number[], dist?: number, blockTestFunction?: (id: number) => boolean): {
-        position: number[];
-        normal: number[];
+        position: any;
+        normal: any;
         _localPosition: number[];
     };
     /**

@@ -25,6 +25,8 @@ export class Entities extends ECS {
      * @type {import('../index').Engine}
     */
     noa: import("../index").Engine;
+    /** @internal */
+    _disposed: boolean;
     /** Hash containing the component names of built-in components.
      * @type {{ [key:string]: string }}
     */
@@ -158,5 +160,6 @@ export class Entities extends ECS {
      * Helper to set up a general entity, and populate with some common components depending on arguments.
     */
     add(position?: any, width?: number, height?: number, mesh?: any, meshOffset?: any, doPhysics?: boolean, shadow?: boolean): number;
+    dispose(): void;
 }
 import ECS from 'ent-comp';

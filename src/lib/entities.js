@@ -63,6 +63,9 @@ export class Entities extends ECS {
         */
         this.noa = noa
 
+        /** @internal */
+        this._disposed = false
+
         /** Hash containing the component names of built-in components.
          * @type {{ [key:string]: string }} 
         */
@@ -416,6 +419,33 @@ export class Entities extends ECS {
         }
 
         return eid
+    }
+
+
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true
+        var ids = new Set()
+        if (this._storage) {
+            Object.keys(this._storage).forEach(compName => {
+                var store = this._storage[compName]
+                if (!store || !store.hash) return
+                Object.keys(store.hash).forEach(id => {
+                    if (store.hash[id]) ids.add(Number(id))
+                })
+            })
+        }
+        ids.forEach(id => this.deleteEntity(id))
+        if (this._storage) {
+            Object.keys(this._storage).forEach(compName => {
+                var store = this._storage[compName]
+                if (store && typeof store.dispose === 'function') store.dispose()
+            })
+        }
+        this.components = {}
+        this.comps = this.components
+        this._systems.length = 0
+        this._renderSystems.length = 0
     }
 }
 

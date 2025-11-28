@@ -1,4 +1,8 @@
 /**
+ * @typedef {{ overflow: string, height: string }} BodyStyleBackup
+ * @typedef {HTMLDivElement & { __noaBodyStyleBackup?: BodyStyleBackup }} NoaContainerElement
+ */
+/**
  * `noa.container` - manages the game's HTML container element, canvas,
  * fullscreen, pointerLock, and so on.
  *
@@ -20,6 +24,9 @@ export class Container extends EventEmitter {
      * @type {import('../index').Engine}
     */
     noa: import("../index").Engine;
+    _trackedListeners: any[];
+    _ownsElement: boolean;
+    _disposed: boolean;
     element: any;
     /** The `canvas` element that the game will draw into */
     canvas: any;
@@ -43,6 +50,14 @@ export class Container extends EventEmitter {
      * Sets whether `noa` should try to acquire or release pointerLock
     */
     setPointerLock(lock?: boolean): void;
+    dispose(): void;
 }
+export type BodyStyleBackup = {
+    overflow: string;
+    height: string;
+};
+export type NoaContainerElement = HTMLDivElement & {
+    __noaBodyStyleBackup?: BodyStyleBackup;
+};
 import { EventEmitter } from 'events';
 import { MicroGameShell } from 'micro-game-shell';

@@ -8,6 +8,7 @@ import { makeProfileHook } from './util'
 
 // enable for profiling..
 var PROFILE_EVERY = 0
+var tempCoordArray = [0, 0, 0]
 
 
 
@@ -221,10 +222,11 @@ function GreedyMesher(noa, terrainMatManager) {
                 .lo(1, 1, 1)
                 .transpose(d, u, v)
 
-            // embiggen the cached mask arrays if needed
+            // embiggen the cached mask arrays if needed - grow exponentially to reduce allocations
             if (maskCache.length < cs * cs) {
-                maskCache = new Int16Array(cs * cs)
-                aoMaskCache = new Int16Array(cs * cs)
+                var newSize = Math.max(cs * cs, maskCache.length * 2)
+                maskCache = new Int16Array(newSize)
+                aoMaskCache = new Int16Array(newSize)
             }
 
             // sets up transposed accessor for querying solidity of (i,j,k):
@@ -463,8 +465,12 @@ function GreedyMesher(noa, terrainMatManager) {
 
         var n = 0
         var materialDir = d * 2
-        var x = [0, 0, 0]
-        x[d] = i
+        // reuse array to avoid allocation in hot path
+        var coords = tempCoordArray
+        coords[0] = 0
+        coords[1] = 0
+        coords[2] = 0
+        coords[d] = i
 
         var maskCompareFcn = (doAO) ? maskCompare : maskCompare_noAO
 
@@ -517,11 +523,11 @@ function GreedyMesher(noa, terrainMatManager) {
                 faceData.numFaces++
 
                 faceData.matIDs[nf] = matID
-                x[u] = j
-                x[v] = k
-                faceData.is[nf] = x[0]
-                faceData.js[nf] = x[1]
-                faceData.ks[nf] = x[2]
+                coords[u] = j
+                coords[v] = k
+                faceData.is[nf] = coords[0]
+                faceData.js[nf] = coords[1]
+                faceData.ks[nf] = coords[2]
                 faceData.wids[nf] = w
                 faceData.hts[nf] = h
                 faceData.packedAO[nf] = ao

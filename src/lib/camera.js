@@ -1,7 +1,5 @@
 
 import * as vec3 from 'gl-vec3'
-import aabb from 'aabb-3d'
-import sweep from 'voxel-aabb-sweep'
 
 
 
@@ -15,6 +13,7 @@ function CameraDefaults() {
     this.sensitivityY = 10
     this.initialZoom = 0
     this.zoomSpeed = 0.2
+    this.dragCameraOutsidePointerlock = false
 }
 
 
@@ -25,6 +24,7 @@ var tempVectors = [
     vec3.create(),
 ]
 var originVector = vec3.create()
+var obstructionDir = vec3.create()
 
 
 /**
@@ -80,6 +80,9 @@ export class Camera {
          * Note this setting is ignored if pointerLock isn't supported.
          */
         this.sensitivityMultOutsidePointerlock = opts.sensitivityMultOutsidePointerlock
+
+        /** Allow the camera to drag when pointerlock is unavailable */
+        this.dragCameraOutsidePointerlock = !!opts.dragCameraOutsidePointerlock
 
         /** 
          * Camera yaw angle. 
@@ -230,9 +233,19 @@ export class Camera {
 
         // conditional changes to mouse sensitivity
         var senseMult = this.sensitivityMult
-        if (this.noa.container.supportsPointerLock) {
-            if (!this.noa.container.hasPointerLock) {
+        var container = this.noa.container
+        if (container.supportsPointerLock) {
+            if (!container.hasPointerLock) {
                 senseMult *= this.sensitivityMultOutsidePointerlock
+                if (!this.dragCameraOutsidePointerlock || !container.pointerInGame) {
+                    senseMult = 0
+                }
+            }
+        } else {
+            if (this.dragCameraOutsidePointerlock) {
+                senseMult *= this.sensitivityMultOutsidePointerlock
+            } else {
+                senseMult = 0
             }
         }
         if (senseMult === 0) return
@@ -268,9 +281,17 @@ export class Camera {
      *  Called before all renders, pre- and post- entity render systems
      * @internal
     */
-    updateBeforeEntityRenderSystems() {
-        // zoom update
-        this.currentZoom += (this.zoomDistance - this.currentZoom) * this.zoomSpeed
+    updateBeforeEntityRenderSystems(dt = 0) {
+        var target = this.zoomDistance
+        if (target === this.currentZoom) return
+        var lerp = Math.max(0, Math.min(0.99, this.zoomSpeed))
+        if (lerp <= 0) {
+            this.currentZoom = target
+            return
+        }
+        var frameMs = 1000 / 60
+        var factor = 1 - Math.pow(1 - lerp, Math.max(dt, 0) / frameMs)
+        this.currentZoom += (target - this.currentZoom) * factor
     }
 
     /** @internal */
@@ -290,19 +311,16 @@ export class Camera {
 */
 
 function cameraObstructionDistance(self) {
-    if (!self._sweepBox) {
-        self._sweepBox = new aabb([0, 0, 0], [0.2, 0.2, 0.2])
-        self._sweepGetVoxel = self.noa.world.getBlockSolidity.bind(self.noa.world)
-        self._sweepVec = vec3.create()
-        self._sweepHit = () => true
-    }
-    var pos = vec3.copy(self._sweepVec, self._localGetTargetPosition())
-    vec3.add(pos, pos, self.noa.worldOriginOffset)
-    for (var i = 0; i < 3; i++) pos[i] -= 0.1
-    self._sweepBox.setPosition(pos)
     var dist = Math.max(self.zoomDistance, self.currentZoom) + 0.1
-    vec3.scale(self._sweepVec, self.getDirection(), -dist)
-    return sweep(self._sweepGetVoxel, self._sweepBox, self._sweepVec, self._sweepHit, true)
+    var origin = self.getTargetPosition()
+    var dir = obstructionDir
+    vec3.copy(dir, self.getDirection())
+    vec3.scale(dir, dir, -1)
+    var pick = self.noa.rendering.pickTerrainWithRay(origin, dir, dist)
+    if (pick && pick.hit && typeof pick.distance === 'number') {
+        return Math.max(0, Math.min(dist, pick.distance - 0.15))
+    }
+    return dist
 }
 
 

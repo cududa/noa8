@@ -207,9 +207,22 @@ class TerrainMaterialPlugin extends MaterialPluginBase {
         super(material, 'TestPlugin', priority, defines)
         this._enable(true)
         this._atlasTextureArray = null
+        this._textureLoadObserver = null
 
-        texture.onLoadObservable.add((tex) => {
+        this._textureLoadObserver = texture.onLoadObservable.add((tex) => {
             this.setTextureArrayData(tex)
+        })
+
+        // Clean up observer when material is disposed to prevent memory leaks
+        material.onDisposeObservable.add(() => {
+            if (this._textureLoadObserver) {
+                texture.onLoadObservable.remove(this._textureLoadObserver)
+                this._textureLoadObserver = null
+            }
+            if (this._atlasTextureArray) {
+                this._atlasTextureArray.dispose()
+                this._atlasTextureArray = null
+            }
         })
     }
 

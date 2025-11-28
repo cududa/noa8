@@ -18,6 +18,7 @@ import {
     TransformNode,
     CreateLines,
     CreatePlane,
+    Ray,
 } from 'babylonjs'
 
 // Babylon 8 expects materials to expose needAlphaTestingForMesh; add a backward-compatible shim
@@ -103,6 +104,8 @@ export class Rendering {
         this.revAoVal = opts.reverseAOmultiplier
         /** @internal */
         this.meshingCutoffTime = 6 // ms
+        /** @internal */
+        this._disposed = false
 
         /** the Babylon.js Engine object for the scene */
         this.engine = null
@@ -179,6 +182,15 @@ export class Rendering {
 
         // scene options
         scene.skipPointerMovePicking = true
+
+        /** @internal */
+        this._pickOriginVec = new Vector3(0, 0, 0)
+        /** @internal */
+        this._pickDirectionVec = new Vector3(0, 0, 1)
+        /** @internal */
+        this._pickRay = new Ray(this._pickOriginVec, this._pickDirectionVec, 1)
+        /** @internal */
+        this._terrainPickPredicate = (mesh) => mesh.metadata && mesh.metadata.noa_chunk_terrain_mesh
     }
 }
 
@@ -260,6 +272,26 @@ Rendering.prototype.postRender = function () {
     // nothing currently
 }
 
+Rendering.prototype.dispose = function () {
+    if (this._disposed) return
+    this._disposed = true
+    if (this.scene) {
+        this.scene.meshes.slice().forEach(mesh => {
+            if (!mesh.isDisposed()) mesh.dispose()
+        })
+        this.scene.dispose()
+        this.scene = null
+    }
+    if (this.engine) {
+        this.engine.stopRenderLoop()
+        this.engine.dispose()
+        this.engine = null
+    }
+    this.light = null
+    this.camera = null
+    this._highlightMesh = null
+}
+
 
 /** @internal */
 Rendering.prototype.resize = function () {
@@ -267,6 +299,27 @@ Rendering.prototype.resize = function () {
     if (this.noa._paused && this.renderOnResize) {
         this.scene.render()
     }
+}
+
+Rendering.prototype.pickTerrainFromCamera = function (distance = -1) {
+    if (!this.scene || !this.noa || !this.noa.camera) return null
+    var origin = this.noa.camera.getPosition()
+    var dir = this.noa.camera.getDirection()
+    return this.pickTerrainWithRay(origin, dir, distance)
+}
+
+Rendering.prototype.pickTerrainWithRay = function (origin, direction, distance = -1) {
+    if (!this.scene) return null
+    var originVec = this._pickOriginVec
+    originVec.copyFromFloats(origin[0], origin[1], origin[2])
+    var dirVec = this._pickDirectionVec
+    dirVec.copyFromFloats(direction[0], direction[1], direction[2])
+    dirVec.normalize()
+    var ray = this._pickRay
+    ray.origin.copyFrom(originVec)
+    ray.direction.copyFrom(dirVec)
+    ray.length = (distance > 0) ? distance : this.noa.blockTestDistance
+    return this.scene.pickWithRay(ray, this._terrainPickPredicate)
 }
 
 

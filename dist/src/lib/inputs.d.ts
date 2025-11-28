@@ -1,29 +1,47 @@
-/**
- * `noa.inputs` - Handles key and mouse input bindings.
- *
- * This module extends
- * [game-inputs](https://github.com/fenomas/game-inputs),
- * so turn on "Inherited" to see its APIs here, or view the base module
- * for full docs.
- *
- * This module uses the following default options (from the options
- * object passed to the {@link Engine}):
- *
- * ```js
- *   defaultBindings: {
- *     "forward":  ["KeyW", "ArrowUp"],
- *     "backward": ["KeyS", "ArrowDown"],
- *     "left":     ["KeyA", "ArrowLeft"],
- *     "right":    ["KeyD", "ArrowRight"],
- *     "fire":     "Mouse1",
- *     "mid-fire": ["Mouse2", "KeyQ"],
- *     "alt-fire": ["Mouse3", "KeyE"],
- *     "jump":     "Space",
- *   }
- * ```
- */
-export class Inputs extends GameInputs {
-    /** @internal */
-    constructor(noa: any, opts: any, element: any);
+export class Inputs extends GameInputsLike {
+    constructor(noa: any, opts: {}, element: any);
 }
-import { GameInputs } from 'game-inputs';
+/**
+ * Lightweight re-implementation of the `game-inputs` module used earlier by noa.
+ * Adds deterministic cleanup so instances can be garbage-collected safely.
+ */
+declare class GameInputsLike {
+    constructor(domElement: any, options: any);
+    version: string;
+    element: any;
+    preventDefaults: boolean;
+    stopPropagation: boolean;
+    allowContextMenu: boolean;
+    disabled: boolean;
+    filterEvents: (ev: any, bindingName: any) => boolean;
+    down: EventEmitter;
+    up: EventEmitter;
+    state: {};
+    pointerState: {
+        dx: number;
+        dy: number;
+        scrollx: number;
+        scrolly: number;
+        scrollz: number;
+    };
+    pressCount: {};
+    releaseCount: {};
+    _keyBindmap: {};
+    _keyStates: {};
+    _bindPressCount: {};
+    _touches: {
+        lastX: number;
+        lastY: number;
+        currID: any;
+    };
+    _pressedDuringMeta: {};
+    _domListeners: any[];
+    bind(bindingName: any, ...keys: any[]): void;
+    unbind(bindingName: any): void;
+    getBindings(): {};
+    tick(): void;
+    dispose(): void;
+    _trackDomListener(target: any, type: any, handler: any, options: any): void;
+}
+import { EventEmitter } from 'events';
+export {};

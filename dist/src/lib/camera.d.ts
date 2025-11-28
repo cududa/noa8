@@ -42,6 +42,8 @@ export class Camera {
      * Note this setting is ignored if pointerLock isn't supported.
      */
     sensitivityMultOutsidePointerlock: number;
+    /** Allow the camera to drag when pointerlock is unavailable */
+    dragCameraOutsidePointerlock: boolean;
     /**
      * Camera yaw angle.
      * Returns the camera's rotation angle around the vertical axis.
@@ -120,7 +122,7 @@ export class Camera {
      *  Called before all renders, pre- and post- entity render systems
      * @internal
     */
-    updateBeforeEntityRenderSystems(): void;
+    updateBeforeEntityRenderSystems(dt?: number): void;
     /** @internal */
     updateAfterEntityRenderSystems(): void;
 }
@@ -134,5 +136,6 @@ declare class CameraDefaults {
     sensitivityY: number;
     initialZoom: number;
     zoomSpeed: number;
+    dragCameraOutsidePointerlock: boolean;
 }
 export {};

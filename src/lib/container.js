@@ -2,6 +2,11 @@
 import { EventEmitter } from 'events'
 import { MicroGameShell } from 'micro-game-shell'
 
+/**
+ * @typedef {{ overflow: string, height: string }} BodyStyleBackup
+ * @typedef {HTMLDivElement & { __noaBodyStyleBackup?: BodyStyleBackup }} NoaContainerElement
+ */
+
 
 
 
@@ -34,12 +39,20 @@ export class Container extends EventEmitter {
         */
         this.noa = noa
 
+        this._trackedListeners = []
+        this._ownsElement = false
+        this._disposed = false
+
         /** The game's DOM element container */
         var domEl = opts.domElement || null
         if (typeof domEl === 'string') {
             domEl = document.querySelector(domEl)
         }
-        this.element = domEl || createContainerDiv()
+        if (!domEl) {
+            domEl = createContainerDiv()
+            this._ownsElement = true
+        }
+        this.element = domEl
 
         /** The `canvas` element that the game will draw into */
         this.canvas = getOrCreateCanvas(this.element)
@@ -84,17 +97,16 @@ export class Container extends EventEmitter {
             this._shell.onResize = noa.rendering.resize.bind(noa.rendering)
             // listeners to track when game has focus / pointer
             detectPointerLock(this)
-            this.element.addEventListener('mouseenter', () => { this._pointerInGame = true })
-            this.element.addEventListener('mouseleave', () => { this._pointerInGame = false })
-            window.addEventListener('focus', () => { this._isFocused = true })
-            window.addEventListener('blur', () => { this._isFocused = false })
+            trackListener(this, this.element, 'mouseenter', () => { this._pointerInGame = true })
+            trackListener(this, this.element, 'mouseleave', () => { this._pointerInGame = false })
+            trackListener(this, window, 'focus', () => { this._isFocused = true })
+            trackListener(this, window, 'blur', () => { this._isFocused = false })
             // catch edge cases for initial states
             var onFirstMousedown = () => {
                 this._pointerInGame = true
                 this._isFocused = true
-                this.element.removeEventListener('mousedown', onFirstMousedown)
             }
-            this.element.addEventListener('mousedown', onFirstMousedown)
+            trackListener(this, this.element, 'mousedown', onFirstMousedown, { once: true })
             // emit for engine core
             this.emit('DOMready')
             // done and remove listener
@@ -135,6 +147,32 @@ export class Container extends EventEmitter {
         // not sure if this will work robustly
         this._shell.pointerLock = !!lock
     }
+
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true
+        // disable shell callbacks and timers
+        if (this._shell) {
+            this._shell.onTick = () => { }
+            this._shell.onRender = () => { }
+            this._shell.onInit = null
+            this._shell.onResize = null
+            if (this._shell._data && this._shell._data.intervalID >= 0) {
+                clearInterval(this._shell._data.intervalID)
+                this._shell._data.intervalID = -1
+            }
+        }
+        while (this._trackedListeners.length) {
+            var remove = this._trackedListeners.pop()
+            remove()
+        }
+        if (this._ownsElement && this.element && this.element.parentElement) {
+            this.element.parentElement.removeChild(this.element)
+            restoreBodyStyles(/** @type {NoaContainerElement} */ (this.element))
+        }
+        this.canvas = null
+        this.element = null
+    }
 }
 
 
@@ -150,6 +188,7 @@ export class Container extends EventEmitter {
 
 function createContainerDiv() {
     // based on github.com/mikolalysenko/game-shell - makeDefaultContainer()
+    /** @type {NoaContainerElement} */
     var container = document.createElement("div")
     container.tabIndex = 1
     container.style.position = "fixed"
@@ -159,6 +198,11 @@ function createContainerDiv() {
     container.style.bottom = "0px"
     container.style.height = "100%"
     container.style.overflow = "hidden"
+    var body = document.body
+    container.__noaBodyStyleBackup = {
+        overflow: body.style.overflow || '',
+        height: body.style.height || '',
+    }
     document.body.appendChild(container)
     document.body.style.overflow = "hidden" //Prevent bounce
     document.body.style.height = "100%"
@@ -195,11 +239,20 @@ function detectPointerLock(self) {
         ('webkitPointerLockElement' in document)
     if (lockElementExists) {
         self._supportsPointerLock = true
-        var listener = function (e) {
-            self._supportsPointerLock = false
-            document.removeEventListener(e.type, listener)
+        var activeTouches = 0
+        var update = () => {
+            self._supportsPointerLock = lockElementExists && activeTouches === 0
         }
-        document.addEventListener('touchmove', listener)
+        trackListener(self, window, 'touchstart', () => {
+            activeTouches++
+            update()
+        }, { passive: true })
+        var onTouchEnd = () => {
+            if (activeTouches > 0) activeTouches--
+            update()
+        }
+        trackListener(self, window, 'touchend', onTouchEnd, { passive: true })
+        trackListener(self, window, 'touchcancel', onTouchEnd, { passive: true })
     }
 }
 
@@ -219,4 +272,23 @@ function doCanvasBugfix(noa, canvas) {
         if (ct++ > 10) noa.off('beforeRender', fixCanvas)
     }
     noa.on('beforeRender', fixCanvas)
+}
+
+function trackListener(self, target, type, handler, options) {
+    target.addEventListener(type, handler, options)
+    self._trackedListeners.push(() => target.removeEventListener(type, handler, options))
+}
+
+/**
+ * @param {NoaContainerElement | null} container
+ */
+function restoreBodyStyles(container) {
+    var prev = container && container.__noaBodyStyleBackup
+    if (!prev) return
+    if (document.body.style.overflow === 'hidden') {
+        document.body.style.overflow = prev.overflow
+    }
+    if (document.body.style.height === '100%') {
+        document.body.style.height = prev.height
+    }
 }

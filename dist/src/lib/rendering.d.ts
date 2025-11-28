@@ -40,6 +40,8 @@ export class Rendering {
     revAoVal: any;
     /** @internal */
     meshingCutoffTime: number;
+    /** @internal */
+    _disposed: boolean;
     /** the Babylon.js Engine object for the scene */
     engine: Engine;
     /** the Babylon.js Scene object for the world */
@@ -63,6 +65,14 @@ export class Rendering {
     _camScreenMat: StandardMaterial;
     /** @internal */
     _camLocBlock: number;
+    /** @internal */
+    _pickOriginVec: Vector3;
+    /** @internal */
+    _pickDirectionVec: Vector3;
+    /** @internal */
+    _pickRay: Ray;
+    /** @internal */
+    _terrainPickPredicate: (mesh: any) => any;
     /** The Babylon `scene` object representing the game world. */
     getScene(): Scene;
     setMainLightOptions(opts: any): void;
@@ -74,8 +84,12 @@ export class Rendering {
     render(): void;
     /** @internal */
     postRender(): void;
+    dispose(): void;
+    _highlightMesh: any;
     /** @internal */
     resize(): void;
+    pickTerrainFromCamera(distance?: number): import("babylonjs").PickingInfo;
+    pickTerrainWithRay(origin: any, direction: any, distance?: number): import("babylonjs").PickingInfo;
     /** @internal */
     highlightBlockFace(show: any, posArr: any, normArr: any): void;
     /**
@@ -119,3 +133,5 @@ import { FreeCamera } from 'babylonjs';
 import { SceneOctreeManager } from './sceneOctreeManager';
 import { TransformNode } from 'babylonjs';
 import { StandardMaterial } from 'babylonjs';
+import { Vector3 } from 'babylonjs';
+import { Ray } from 'babylonjs';

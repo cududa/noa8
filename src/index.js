@@ -117,6 +117,9 @@ export class Engine extends EventEmitter {
     constructor(opts = {}) {
         super()
         opts = Object.assign({}, defaultOptions, opts)
+        if (opts.dragCameraOutsidePointerLock && typeof opts.sensitivityMultOutsidePointerlock !== 'number') {
+            opts.sensitivityMultOutsidePointerlock = 1
+        }
 
         /** Version string, e.g. `"0.25.4"` */
         this.version = version
@@ -127,6 +130,8 @@ export class Engine extends EventEmitter {
 
         /** @internal */
         this._paused = false
+        /** @internal */
+        this._disposed = false
 
         /** @internal */
         this._originRebaseDistance = opts.originRebaseDistance
@@ -301,11 +306,33 @@ export class Engine extends EventEmitter {
             _localPosition: vec3.create(),
             position: [0, 0, 0],
             normal: [0, 0, 0],
+            _blockID: null,
+        }
+
+        /** @internal */
+        this._gpuPickResult = {
+            _localPosition: vec3.create(),
+            position: [0, 0, 0],
+            normal: [0, 0, 0],
+            _blockID: null,
+        }
+
+        /** @internal */
+        this._pickTestFunction = null
+
+        /** @internal */
+        this._pickTestVoxel = (x, y, z) => {
+            var off = this.worldOriginOffset
+            var id = this.world.getBlockID(x + off[0], y + off[1], z + off[2])
+            var fn = this._pickTestFunction || this.registry.getBlockSolidity
+            return fn(id)
         }
 
 
 
 
+
+        this._cleanupDebugGlobals = null
 
         // temp hacks for development
         if (opts.debug) {
@@ -325,6 +352,13 @@ export class Engine extends EventEmitter {
             win.ndarray = ndarray
             win.scene = this.rendering.scene
             win.skeletonUtils = skeletonUtils
+            this._cleanupDebugGlobals = () => {
+                if (win.noa === this) delete win.noa
+                if (win.vec3 === vec3) delete win.vec3
+                if (win.ndarray === ndarray) delete win.ndarray
+                if (win.scene === this.rendering.scene) delete win.scene
+                if (win.skeletonUtils === skeletonUtils) delete win.skeletonUtils
+            }
         }
 
         // Ensure a global hook exists for external debug pose tools (used by consumer games)
@@ -362,6 +396,7 @@ export class Engine extends EventEmitter {
     */
 
     tick(dt) {
+        if (this._disposed) return
         dt *= this.timeScale || 1
 
         // note dt is a fixed value, not an observed delay
@@ -405,6 +440,7 @@ export class Engine extends EventEmitter {
      * @internal
     */
     render(dt, framePart) {
+        if (this._disposed) return
         dt *= this.timeScale || 1
 
         // note: framePart is how far we are into the current tick
@@ -431,7 +467,7 @@ export class Engine extends EventEmitter {
         profile_hook_render('meshing')
 
         // entity render systems
-        this.camera.updateBeforeEntityRenderSystems()
+        this.camera.updateBeforeEntityRenderSystems(dt)
         this.entities.render(dt)
         this.camera.updateAfterEntityRenderSystems()
         profile_hook_render('entities')
@@ -495,6 +531,49 @@ export class Engine extends EventEmitter {
             this.world.setBlockID(id, x, y, z)
             return id
         }
+    }
+
+
+
+
+    /** Dispose all engine resources and detach DOM/global hooks */
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true
+        this.setPaused(true)
+
+        if (this.defaultBlockHighlightFunction) {
+            this.off('targetBlockChanged', this.defaultBlockHighlightFunction)
+        }
+        if (this._cleanupDebugGlobals) {
+            this._cleanupDebugGlobals()
+            this._cleanupDebugGlobals = null
+        }
+
+        if (this.inputs && typeof this.inputs.dispose === 'function') {
+            this.inputs.dispose()
+        }
+        if (this.rendering && typeof this.rendering.dispose === 'function') {
+            this.rendering.dispose()
+        }
+        if (this.container && typeof this.container.dispose === 'function') {
+            this.container.dispose()
+        }
+        if (this.entities && typeof this.entities.dispose === 'function') {
+            this.entities.dispose()
+        }
+
+        if (typeof window !== 'undefined') {
+            var win = /** @type {any} */ (window)
+            if (win.noa === this) delete win.noa
+        }
+
+        this.inputs = null
+        this.rendering = null
+        this.container = null
+        this.entities = null
+        this.world = null
+        this.physics = null
     }
 
 
@@ -587,7 +666,8 @@ export class Engine extends EventEmitter {
             this.globalToLocal(pos, null, pickPos)
             pos = pickPos
         }
-        return this._localPick(pos, dir, dist, blockTestFunction)
+        var internal = this._localPick(pos, dir, dist, blockTestFunction)
+        return internal ? clonePickResult(internal) : null
     }
 
 
@@ -609,12 +689,7 @@ export class Engine extends EventEmitter {
         // do a raycast in local coords - result obj will be in global coords
         if (dist === 0) return null
         var testFn = blockTestFunction || this.registry.getBlockSolidity
-        var world = this.world
-        var off = this.worldOriginOffset
-        var testVoxel = function (x, y, z) {
-            var id = world.getBlockID(x + off[0], y + off[1], z + off[2])
-            return testFn(id)
-        }
+        this._pickTestFunction = testFn
         if (!pos) pos = this.camera._localGetTargetPosition()
         dir = dir || this.camera.getDirection()
         dist = dist || -1
@@ -622,18 +697,28 @@ export class Engine extends EventEmitter {
         var result = this._pickResult
         var rpos = result._localPosition
         var rnorm = result.normal
-        var hit = raycast(testVoxel, pos, dir, dist, rpos, rnorm)
+        var hit = raycast(this._pickTestVoxel, pos, dir, dist, rpos, rnorm)
+        this._pickTestFunction = null
         if (!hit) return null
         // position is right on a voxel border - adjust it so that flooring works reliably
         // adjust along normal direction, i.e. away from the block struck
         vec3.scaleAndAdd(rpos, rpos, rnorm, 0.01)
         // add global result
         this.localToGlobal(rpos, result.position)
+        result._blockID = null
         return result
     }
 
 }
 
+
+function clonePickResult(res) {
+    return {
+        position: res.position.slice(),
+        normal: res.normal.slice(),
+        _localPosition: vec3.clone(res._localPosition),
+    }
+}
 
 
 /*
@@ -679,14 +764,16 @@ function checkWorldOffset(noa) {
 function updateBlockTargets(noa) {
     var newhash = 0
     var blockIdFn = noa.blockTargetIdCheck || noa.registry.getBlockSolidity
-    var result = noa._localPick(null, null, null, blockIdFn)
+    var result = trySceneBlockPick(noa, blockIdFn) || noa._localPick(null, null, null, blockIdFn)
     if (result) {
         var dat = noa._targetedBlockDat
         // pick stops just shy of voxel boundary, so floored pos is the adjacent voxel
         vec3.floor(dat.adjacent, result.position)
         vec3.copy(dat.normal, result.normal)
         vec3.sub(dat.position, dat.adjacent, dat.normal)
-        dat.blockID = noa.world.getBlockID(dat.position[0], dat.position[1], dat.position[2])
+        var blockID = (result._blockID != null) ? result._blockID :
+            noa.world.getBlockID(dat.position[0], dat.position[1], dat.position[2])
+        dat.blockID = blockID
         noa.targetedBlock = dat
         // arbitrary hash so we know when the targeted blockID/pos/face changes
         var pos = dat.position, norm = dat.normal
@@ -700,6 +787,43 @@ function updateBlockTargets(noa) {
         noa.emit('targetBlockChanged', noa.targetedBlock)
         noa._prevTargetHash = newhash
     }
+}
+
+var gpuPickAdjacent = vec3.create()
+var gpuPickBlock = vec3.create()
+var GPU_PICK_OFFSET = 0.01
+
+function trySceneBlockPick(noa, blockTestFn) {
+    if (!noa.rendering || !noa.rendering.scene) return null
+    var pickInfo = noa.rendering.pickTerrainFromCamera(noa.blockTestDistance)
+    if (!pickInfo || !pickInfo.hit || !pickInfo.pickedPoint) return null
+    var normalVec = pickInfo.getNormal(true, true)
+    if (!normalVec) return null
+
+    var result = noa._gpuPickResult
+    var pos = result.position
+    pos[0] = pickInfo.pickedPoint.x
+    pos[1] = pickInfo.pickedPoint.y
+    pos[2] = pickInfo.pickedPoint.z
+
+    var normal = result.normal
+    normal[0] = normalVec.x
+    normal[1] = normalVec.y
+    normal[2] = normalVec.z
+    vec3.normalize(normal, normal)
+    for (var i = 0; i < 3; i++) {
+        normal[i] = (Math.abs(normal[i]) > 0.5) ? Math.sign(normal[i]) : 0
+    }
+
+    vec3.scaleAndAdd(pos, pos, normal, GPU_PICK_OFFSET)
+    vec3.floor(gpuPickAdjacent, pos)
+    vec3.sub(gpuPickBlock, gpuPickAdjacent, normal)
+    var blockID = noa.world.getBlockID(gpuPickBlock[0], gpuPickBlock[1], gpuPickBlock[2])
+    if (!blockTestFn(blockID)) return null
+
+    noa.globalToLocal(pos, null, result._localPosition)
+    result._blockID = blockID
+    return result
 }
 
 
