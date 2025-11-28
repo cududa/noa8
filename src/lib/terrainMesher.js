@@ -422,8 +422,8 @@ function GreedyMesher(noa, terrainMatManager) {
                 if (op0 && op1) continue
 
                 // also no face if both block faces have the same block material
-                var m0 = getMaterial(id0, materialDir)
-                var m1 = getMaterial(id1, materialDir + 1)
+                var m0 = getMaterial(id0, materialDir) || 0
+                var m1 = getMaterial(id1, materialDir + 1) || 0
                 if (m0 === m1) continue
 
                 // choose which block face to draw:
@@ -983,4 +983,3 @@ function unpackAOMask(aomask) {
 
 var profile_hook = (PROFILE_EVERY) ?
     makeProfileHook(PROFILE_EVERY, 'Meshing') : () => { }
-

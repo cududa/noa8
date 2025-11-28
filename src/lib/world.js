@@ -180,6 +180,14 @@ export class World extends EventEmitter {
             this._coordsToChunkIndexes = chunkCoordsToIndexesPowerOfTwo
             this._coordsToChunkLocals = chunkCoordsToLocalsPowerOfTwo
         }
+
+        // Async chunk generation support
+        /** @internal */
+        this._asyncChunkGenerator = null
+        /** @internal */
+        this._asyncChunkAbortControllers = new Map() // requestID -> AbortController
+        /** @internal */
+        this._asyncChunkPromises = new Map() // requestID -> Promise
     }
 }
 
@@ -237,6 +245,42 @@ World.prototype.setBlockID = function (id = 0, x = 0, y = 0, z = 0) {
     if (!chunk) return
     var [i, j, k] = this._coordsToChunkLocals(x, y, z)
     return chunk.set(i, j, k, id)
+}
+
+
+/**
+ * Register an async chunk generator function. When registered, this function
+ * will be called instead of emitting `worldDataNeeded` events.
+ *
+ * The generator function receives:
+ * - `x, y, z`: World coordinates of chunk origin
+ * - `chunkSize`: Size of chunk in each dimension
+ * - `signal`: AbortSignal that fires if chunk is cancelled (left view range)
+ *
+ * It should return a Promise that resolves to either:
+ * - An object `{ voxelData, userData?, fillVoxelID? }` where voxelData is an ndarray
+ * - Or `null` to indicate the chunk should be empty (all air)
+ *
+ * Example:
+ * ```js
+ * noa.world.registerChunkGenerator(async (x, y, z, chunkSize, signal) => {
+ *   // Check for cancellation
+ *   if (signal.aborted) return null
+ *
+ *   // Generate or fetch chunk data
+ *   const voxelData = await generateChunk(x, y, z, chunkSize)
+ *
+ *   // Can check signal periodically during long operations
+ *   if (signal.aborted) return null
+ *
+ *   return { voxelData }
+ * })
+ * ```
+ *
+ * @param {function(number, number, number, number, AbortSignal): Promise<{voxelData: *, userData?: *, fillVoxelID?: number}|null>} generatorFn
+ */
+World.prototype.registerChunkGenerator = function (generatorFn) {
+    this._asyncChunkGenerator = generatorFn
 }
 
 
@@ -649,11 +693,18 @@ function invalidateChunksInBox(world, box) {
 
 
 
-/** 
+/**
  * when current world changes - empty work queues and mark all for removal
- * @param {World} world 
+ * @param {World} world
 */
 function markAllChunksInvalid(world) {
+    // Cancel all pending async chunk requests
+    for (var [requestID, abortController] of world._asyncChunkAbortControllers) {
+        abortController.abort()
+    }
+    world._asyncChunkAbortControllers.clear()
+    world._asyncChunkPromises.clear()
+
     world._chunksInvalidated.copyFrom(world._chunksKnown)
     world._chunksToRemove.empty()
     world._chunksToRequest.empty()
@@ -746,9 +797,9 @@ function possiblyQueueChunkForMeshing(world, chunk) {
 */
 
 
-/** 
+/**
  * create chunk object and request voxel data from client
- * @param {World} world 
+ * @param {World} world
 */
 function requestNewChunk(world, i, j, k) {
     var size = world._chunkSize
@@ -759,8 +810,65 @@ function requestNewChunk(world, i, j, k) {
     var y = j * size
     var z = k * size
     world._chunksPending.add(i, j, k)
-    world.emit('worldDataNeeded', requestID, dataArr, x, y, z, worldName)
+
+    // If async generator is registered, use it instead of events
+    if (world._asyncChunkGenerator) {
+        requestNewChunkAsync(world, requestID, dataArr, x, y, z, i, j, k, worldName)
+    } else {
+        world.emit('worldDataNeeded', requestID, dataArr, x, y, z, worldName)
+    }
     profile_queues_hook('request')
+}
+
+
+/**
+ * Handle async chunk generation
+ * @param {World} world
+ */
+function requestNewChunkAsync(world, requestID, dataArr, x, y, z, i, j, k, worldName) {
+    // Create abort controller for this request
+    var abortController = new AbortController()
+    world._asyncChunkAbortControllers.set(requestID, abortController)
+
+    var promise = world._asyncChunkGenerator(x, y, z, world._chunkSize, abortController.signal)
+        .then(result => {
+            // Clean up tracking
+            world._asyncChunkAbortControllers.delete(requestID)
+            world._asyncChunkPromises.delete(requestID)
+
+            // Check if aborted or world changed
+            if (abortController.signal.aborted) return
+            if (worldName !== world.noa.worldName) return
+
+            // Handle null result (empty chunk)
+            if (result === null) {
+                setChunkData(world, requestID, dataArr, null, 0)
+                return
+            }
+
+            // Handle result with voxelData
+            var { voxelData, userData, fillVoxelID } = result
+            if (voxelData) {
+                setChunkData(world, requestID, voxelData, userData || null, fillVoxelID ?? -1)
+            } else {
+                // No voxel data provided, treat as empty
+                setChunkData(world, requestID, dataArr, userData || null, 0)
+            }
+        })
+        .catch(err => {
+            // Clean up tracking
+            world._asyncChunkAbortControllers.delete(requestID)
+            world._asyncChunkPromises.delete(requestID)
+
+            // Don't log abort errors - they're expected
+            if (err.name === 'AbortError') return
+
+            console.error(`[noa] Async chunk generation failed for ${requestID}:`, err)
+            // On error, provide empty chunk to prevent getting stuck
+            world._chunksPending.remove(i, j, k)
+        })
+
+    world._asyncChunkPromises.set(requestID, promise)
 }
 
 /** 
@@ -803,12 +911,22 @@ function setChunkData(world, reqID, array, userData, fillVoxelID) {
 
 
 
-/** 
+/**
  * remove a chunk that wound up in the remove queue
- * @param {World} world 
+ * @param {World} world
 */
 function removeChunk(world, i, j, k) {
     var chunk = world._storage.getChunkByIndexes(i, j, k)
+
+    // Cancel any pending async generation for this chunk
+    var worldName = world.noa.worldName
+    var requestID = [i, j, k, worldName].join('|')
+    var abortController = world._asyncChunkAbortControllers.get(requestID)
+    if (abortController) {
+        abortController.abort()
+        world._asyncChunkAbortControllers.delete(requestID)
+        world._asyncChunkPromises.delete(requestID)
+    }
 
     if (chunk) {
         world.emit('chunkBeingRemoved', chunk.requestID, chunk.voxels, chunk.userData)
@@ -823,6 +941,7 @@ function removeChunk(world, i, j, k) {
     world._chunksToMesh.remove(i, j, k)
     world._chunksToRemove.remove(i, j, k)
     world._chunksToMeshFirst.remove(i, j, k)
+    world._chunksPending.remove(i, j, k)
 }
 
 

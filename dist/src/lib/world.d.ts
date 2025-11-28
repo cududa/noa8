@@ -117,12 +117,58 @@ export class World extends EventEmitter {
     _coordShiftBits: number;
     /** @internal */
     _coordMask: number;
+    /** @internal */
+    _asyncChunkGenerator: (arg0: number, arg1: number, arg2: number, arg3: number, arg4: AbortSignal) => Promise<{
+        voxelData: any;
+        userData?: any;
+        fillVoxelID?: number;
+    } | null>;
+    /** @internal */
+    _asyncChunkAbortControllers: Map<any, any>;
+    /** @internal */
+    _asyncChunkPromises: Map<any, any>;
     getBlockID(x?: number, y?: number, z?: number): any;
     getBlockSolidity(x?: number, y?: number, z?: number): boolean;
     getBlockOpacity(x?: number, y?: number, z?: number): any;
     getBlockFluidity(x?: number, y?: number, z?: number): any;
     getBlockProperties(x?: number, y?: number, z?: number): any;
     setBlockID(id?: number, x?: number, y?: number, z?: number): void;
+    /**
+     * Register an async chunk generator function. When registered, this function
+     * will be called instead of emitting `worldDataNeeded` events.
+     *
+     * The generator function receives:
+     * - `x, y, z`: World coordinates of chunk origin
+     * - `chunkSize`: Size of chunk in each dimension
+     * - `signal`: AbortSignal that fires if chunk is cancelled (left view range)
+     *
+     * It should return a Promise that resolves to either:
+     * - An object `{ voxelData, userData?, fillVoxelID? }` where voxelData is an ndarray
+     * - Or `null` to indicate the chunk should be empty (all air)
+     *
+     * Example:
+     * ```js
+     * noa.world.registerChunkGenerator(async (x, y, z, chunkSize, signal) => {
+     *   // Check for cancellation
+     *   if (signal.aborted) return null
+     *
+     *   // Generate or fetch chunk data
+     *   const voxelData = await generateChunk(x, y, z, chunkSize)
+     *
+     *   // Can check signal periodically during long operations
+     *   if (signal.aborted) return null
+     *
+     *   return { voxelData }
+     * })
+     * ```
+     *
+     * @param {function(number, number, number, number, AbortSignal): Promise<{voxelData: *, userData?: *, fillVoxelID?: number}|null>} generatorFn
+     */
+    registerChunkGenerator(generatorFn: (arg0: number, arg1: number, arg2: number, arg3: number, arg4: AbortSignal) => Promise<{
+        voxelData: any;
+        userData?: any;
+        fillVoxelID?: number;
+    } | null>): void;
     /** @param box */
     isBoxUnobstructed(box: any): boolean;
     /**
