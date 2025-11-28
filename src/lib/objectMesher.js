@@ -234,10 +234,12 @@ InstanceManager.prototype.dispose = function () {
     this.setCapacity(0)
     this.noa.emit('removingTerrainMesh', this.mesh)
     this.noa.rendering.setMeshVisibility(this.mesh, false)
+    this.mesh.dispose()
     this.mesh = null
     this.keyToIndex = null
     this.locToKey = null
     this.disposed = true
+    this.noa = null
 }
 
 

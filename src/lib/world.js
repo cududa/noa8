@@ -464,7 +464,6 @@ World.prototype.tick = function () {
     while (t < t1) {
         if (!done1) {
             done1 = processRemoveQueue(this)
-                || processRemoveQueue(this)
             profile_hook('removes')
         }
         if (!done2) {
@@ -519,6 +518,7 @@ World.prototype.dispose = function () {
     this._chunksPending.empty()
     this._chunksToMesh.empty()
     this._chunksToMeshFirst.empty()
+    this._chunksSortedLocs.empty()
 
     // Dispose all chunks
     var hash = this._storage.hash
@@ -682,6 +682,7 @@ function findChunksToMesh(world) {
     var numQueued = world._chunksToMesh.count() + world._chunksToMeshFirst.count()
     if (numQueued > maxQueued) return
     var knownArr = world._chunksKnown.arr
+    if (knownArr.length === 0) return
     var maxIter = Math.min(50, knownArr.length / 10)
     for (var ct = 0; ct < maxIter; ct++) {
         var [i, j, k] = knownArr[meshCheckIndex++ % knownArr.length]
@@ -791,16 +792,17 @@ function processMeshingQueue(world, firstOnly) {
     if (queue.isEmpty() && !firstOnly) queue = world._chunksToMesh
     if (queue.isEmpty()) return true
     var [i, j, k] = queue.pop()
-    if (world._chunksToRemove.includes(i, j, k)) return
+    if (world._chunksToRemove.includes(i, j, k)) return false
     var chunk = world._storage.getChunkByIndexes(i, j, k)
     if (chunk) doChunkRemesh(world, chunk)
+    return false
 }
 
 
 /** @param {World} world */
 function possiblyQueueChunkForMeshing(world, chunk) {
     if (!(chunk._terrainDirty || chunk._objectsDirty)) return false
-    if (chunk._neighborCount < chunk.minNeighborsToMesh) return false
+    if (chunk._neighborCount < world.minNeighborsToMesh) return false
     if (world._chunksToMesh.includes(chunk.i, chunk.j, chunk.k)) return false
     if (world._chunksToMeshFirst.includes(chunk.i, chunk.j, chunk.k)) return false
     var queue = (chunk._neighborCount === 26) ?
@@ -902,8 +904,8 @@ function requestNewChunkAsync(world, requestID, dataArr, x, y, z, i, j, k, world
             if (err.name === 'AbortError') return
 
             console.error(`[noa] Async chunk generation failed for ${requestID}:`, err)
-            // On error, provide empty chunk to prevent getting stuck
-            world._chunksPending.remove(i, j, k)
+            // On error, create empty chunk as fallback to prevent permanent holes
+            setChunkData(world, requestID, dataArr, null, 0)
         })
 
     world._asyncChunkPromises.set(requestID, promise)

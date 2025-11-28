@@ -339,6 +339,7 @@ Chunk.prototype.dispose = function () {
     this._neighbors = null
 
     this.isDisposed = true
+    this.noa = null
 }
 
 
