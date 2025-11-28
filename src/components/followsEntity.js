@@ -28,7 +28,10 @@ export default function (noa) {
             updateRenderPosition(state)
         },
 
-        onRemove: null,
+        onRemove: function (eid, state) {
+            state.onTargetMissing = null
+            state.offset = null
+        },
 
 
         // on tick, copy over regular positions
@@ -52,6 +55,7 @@ export default function (noa) {
     function updatePosition(state) {
         var id = state.__id
         var self = noa.ents.getPositionData(id)
+        if (!self) return // defensive check for mid-frame deletion
         var other = noa.ents.getPositionData(state.entity)
         if (!other) {
             if (state.onTargetMissing) state.onTargetMissing(id)
@@ -64,6 +68,7 @@ export default function (noa) {
     function updateRenderPosition(state) {
         var id = state.__id
         var self = noa.ents.getPositionData(id)
+        if (!self) return // defensive check for mid-frame deletion
         var other = noa.ents.getPositionData(state.entity)
         if (other) {
             vec3.add(self._renderPosition, other._renderPosition, state.offset)

@@ -89,7 +89,7 @@ export class Rendering {
     /** @internal */
     resize(): void;
     pickTerrainFromCamera(distance?: number): import("babylonjs").PickingInfo;
-    pickTerrainWithRay(origin: any, direction: any, distance?: number): import("babylonjs").PickingInfo;
+    pickTerrainWithRay(origin: any, direction: any, distance?: number, originIsLocal?: boolean): import("babylonjs").PickingInfo;
     /** @internal */
     highlightBlockFace(show: any, posArr: any, normArr: any): void;
     /**

@@ -7,7 +7,7 @@ export default function _default(noa: any): {
         onTargetMissing: any;
     };
     onAdd: (eid: any, state: any) => void;
-    onRemove: any;
+    onRemove: (eid: any, state: any) => void;
     system: (dt: any, states: any) => void;
     renderSystem: (dt: any, states: any) => void;
 };

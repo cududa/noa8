@@ -55,6 +55,7 @@ export default function (noa, distance = 10) {
             for (var i = 0; i < states.length; i++) {
                 var state = states[i]
                 var posState = noa.ents.getPositionData(state.__id)
+                if (!posState) continue // defensive check for mid-frame deletion
                 var physState = noa.ents.getPhysics(state.__id)
                 updateShadowHeight(noa, posState, physState, state._mesh, state.size, dist, cpos)
             }
@@ -65,7 +66,9 @@ export default function (noa, distance = 10) {
             // before render adjust shadow x/z to render positions
             for (var i = 0; i < states.length; i++) {
                 var state = states[i]
-                var rpos = noa.ents.getPositionData(state.__id)._renderPosition
+                var posData = noa.ents.getPositionData(state.__id)
+                if (!posData) continue // defensive check for mid-frame deletion
+                var rpos = posData._renderPosition
                 var spos = state._mesh.position
                 spos.x = rpos[0]
                 spos.z = rpos[2]

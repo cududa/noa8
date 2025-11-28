@@ -28,6 +28,7 @@ export default function (noa) {
             if (ents.hasPhysics(eid)) {
                 ents.getPhysics(eid).body.onCollide = null
             }
+            state.callback = null // clear user callback to prevent closure retention
         },
 
 

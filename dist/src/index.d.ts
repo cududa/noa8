@@ -151,14 +151,6 @@ export class Engine extends EventEmitter {
         _localPosition: number[];
         position: number[];
         normal: number[];
-        _blockID: any;
-    };
-    /** @internal */
-    _gpuPickResult: {
-        _localPosition: number[];
-        position: number[];
-        normal: number[];
-        _blockID: any;
     };
     /** @internal */
     _pickTestFunction: (id: any) => boolean;

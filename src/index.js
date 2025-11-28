@@ -306,15 +306,6 @@ export class Engine extends EventEmitter {
             _localPosition: vec3.create(),
             position: [0, 0, 0],
             normal: [0, 0, 0],
-            _blockID: null,
-        }
-
-        /** @internal */
-        this._gpuPickResult = {
-            _localPosition: vec3.create(),
-            position: [0, 0, 0],
-            normal: [0, 0, 0],
-            _blockID: null,
         }
 
         /** @internal */
@@ -705,7 +696,6 @@ export class Engine extends EventEmitter {
         vec3.scaleAndAdd(rpos, rpos, rnorm, 0.01)
         // add global result
         this.localToGlobal(rpos, result.position)
-        result._blockID = null
         return result
     }
 
@@ -759,21 +749,19 @@ function checkWorldOffset(noa) {
 
 
 
-// Each frame, by default pick along the player's view vector 
+// Each frame, by default pick along the player's view vector
 // and tell rendering to highlight the struck block face
 function updateBlockTargets(noa) {
     var newhash = 0
     var blockIdFn = noa.blockTargetIdCheck || noa.registry.getBlockSolidity
-    var result = trySceneBlockPick(noa, blockIdFn) || noa._localPick(null, null, null, blockIdFn)
+    var result = noa._localPick(null, null, null, blockIdFn)
     if (result) {
         var dat = noa._targetedBlockDat
         // pick stops just shy of voxel boundary, so floored pos is the adjacent voxel
         vec3.floor(dat.adjacent, result.position)
         vec3.copy(dat.normal, result.normal)
         vec3.sub(dat.position, dat.adjacent, dat.normal)
-        var blockID = (result._blockID != null) ? result._blockID :
-            noa.world.getBlockID(dat.position[0], dat.position[1], dat.position[2])
-        dat.blockID = blockID
+        dat.blockID = noa.world.getBlockID(dat.position[0], dat.position[1], dat.position[2])
         noa.targetedBlock = dat
         // arbitrary hash so we know when the targeted blockID/pos/face changes
         var pos = dat.position, norm = dat.normal
@@ -787,43 +775,6 @@ function updateBlockTargets(noa) {
         noa.emit('targetBlockChanged', noa.targetedBlock)
         noa._prevTargetHash = newhash
     }
-}
-
-var gpuPickAdjacent = vec3.create()
-var gpuPickBlock = vec3.create()
-var GPU_PICK_OFFSET = 0.01
-
-function trySceneBlockPick(noa, blockTestFn) {
-    if (!noa.rendering || !noa.rendering.scene) return null
-    var pickInfo = noa.rendering.pickTerrainFromCamera(noa.blockTestDistance)
-    if (!pickInfo || !pickInfo.hit || !pickInfo.pickedPoint) return null
-    var normalVec = pickInfo.getNormal(true, true)
-    if (!normalVec) return null
-
-    var result = noa._gpuPickResult
-    var pos = result.position
-    pos[0] = pickInfo.pickedPoint.x
-    pos[1] = pickInfo.pickedPoint.y
-    pos[2] = pickInfo.pickedPoint.z
-
-    var normal = result.normal
-    normal[0] = normalVec.x
-    normal[1] = normalVec.y
-    normal[2] = normalVec.z
-    vec3.normalize(normal, normal)
-    for (var i = 0; i < 3; i++) {
-        normal[i] = (Math.abs(normal[i]) > 0.5) ? Math.sign(normal[i]) : 0
-    }
-
-    vec3.scaleAndAdd(pos, pos, normal, GPU_PICK_OFFSET)
-    vec3.floor(gpuPickAdjacent, pos)
-    vec3.sub(gpuPickBlock, gpuPickAdjacent, normal)
-    var blockID = noa.world.getBlockID(gpuPickBlock[0], gpuPickBlock[1], gpuPickBlock[2])
-    if (!blockTestFn(blockID)) return null
-
-    noa.globalToLocal(pos, null, result._localPosition)
-    result._blockID = blockID
-    return result
 }
 
 

@@ -46,6 +46,11 @@ export default function (noa) {
                 setPositionFromPhysics(state, pdat)
                 backtrackRenderPos(state, pdat, 0, false)
             }
+            // Clear body callbacks before removal to prevent memory retention
+            if (state.body) {
+                state.body.onStep = null
+                state.body.onCollide = null
+            }
             noa.physics.removeBody(state.body)
         },
 
@@ -54,6 +59,7 @@ export default function (noa) {
             for (var i = 0; i < states.length; i++) {
                 var state = states[i]
                 var pdat = noa.ents.getPositionData(state.__id)
+                if (!pdat) continue // defensive check for mid-frame deletion
                 setPositionFromPhysics(state, pdat)
             }
         },
@@ -68,8 +74,8 @@ export default function (noa) {
 
             // tickMS is time since last physics engine tick
             // to avoid temporal aliasing, render the state as if lerping between
-            // the last position and the next one 
-            // since the entity data is the "next" position this amounts to 
+            // the last position and the next one
+            // since the entity data is the "next" position this amounts to
             // offsetting each entity into the past by tickRate - dt
             // http://gafferongames.com/game-physics/fix-your-timestep/
 
@@ -78,6 +84,7 @@ export default function (noa) {
                 var state = states[i]
                 var id = state.__id
                 var pdat = noa.ents.getPositionData(id)
+                if (!pdat) continue // defensive check for mid-frame deletion
                 var smoothed = noa.ents.cameraSmoothed(id)
                 backtrackRenderPos(state, pdat, backtrackAmt, smoothed)
             }

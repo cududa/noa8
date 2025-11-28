@@ -41,7 +41,9 @@ export default function (noa) {
 
         onAdd: null,
 
-        onRemove: null,
+        onRemove: function (eid, state) {
+            state.callback = null
+        },
 
 
         system: function entityCollider(dt, states) {
@@ -49,17 +51,21 @@ export default function (noa) {
 
             // data struct that boxIntersect looks for
             // - array of [lo, lo, lo, hi, hi, hi] extents
+            // Track valid states for index mapping after filtering
+            var validStates = []
             for (var i = 0; i < states.length; i++) {
                 var id = states[i].__id
                 var dat = ents.getPositionData(id)
-                intervals[i] = dat._extents
+                if (!dat) continue // defensive check for mid-frame deletion
+                intervals[validStates.length] = dat._extents
+                validStates.push(states[i])
             }
-            intervals.length = states.length
+            intervals.length = validStates.length
 
             // run the intersect library
             boxIntersect(intervals, function (a, b) {
-                var stateA = states[a]
-                var stateB = states[b]
+                var stateA = validStates[a]
+                var stateB = validStates[b]
                 if (!stateA || !stateB) return
                 var intervalA = intervals[a]
                 var intervalB = intervals[b]

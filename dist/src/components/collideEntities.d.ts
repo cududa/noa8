@@ -8,6 +8,6 @@ export default function _default(noa: any): {
         callback: any;
     };
     onAdd: any;
-    onRemove: any;
+    onRemove: (eid: any, state: any) => void;
     system: (dt: any, states: any) => void;
 };

@@ -305,13 +305,18 @@ Rendering.prototype.pickTerrainFromCamera = function (distance = -1) {
     if (!this.scene || !this.noa || !this.noa.camera) return null
     var origin = this.noa.camera.getPosition()
     var dir = this.noa.camera.getDirection()
-    return this.pickTerrainWithRay(origin, dir, distance)
+    return this.pickTerrainWithRay(origin, dir, distance, false)
 }
 
-Rendering.prototype.pickTerrainWithRay = function (origin, direction, distance = -1) {
+Rendering.prototype.pickTerrainWithRay = function (origin, direction, distance = -1, originIsLocal = false) {
     if (!this.scene) return null
     var originVec = this._pickOriginVec
-    originVec.copyFromFloats(origin[0], origin[1], origin[2])
+    if (originIsLocal) {
+        originVec.copyFromFloats(origin[0], origin[1], origin[2])
+    } else {
+        var off = this.noa.worldOriginOffset
+        originVec.copyFromFloats(origin[0] - off[0], origin[1] - off[1], origin[2] - off[2])
+    }
     var dirVec = this._pickDirectionVec
     dirVec.copyFromFloats(direction[0], direction[1], direction[2])
     dirVec.normalize()

@@ -1,5 +1,7 @@
 
 import * as vec3 from 'gl-vec3'
+import aabb from 'aabb-3d'
+import sweep from 'voxel-aabb-sweep'
 
 
 
@@ -24,7 +26,6 @@ var tempVectors = [
     vec3.create(),
 ]
 var originVector = vec3.create()
-var obstructionDir = vec3.create()
 
 
 /**
@@ -311,16 +312,19 @@ export class Camera {
 */
 
 function cameraObstructionDistance(self) {
-    var dist = Math.max(self.zoomDistance, self.currentZoom) + 0.1
-    var origin = self.getTargetPosition()
-    var dir = obstructionDir
-    vec3.copy(dir, self.getDirection())
-    vec3.scale(dir, dir, -1)
-    var pick = self.noa.rendering.pickTerrainWithRay(origin, dir, dist)
-    if (pick && pick.hit && typeof pick.distance === 'number') {
-        return Math.max(0, Math.min(dist, pick.distance - 0.15))
+    if (!self._sweepBox) {
+        self._sweepBox = new aabb([0, 0, 0], [0.2, 0.2, 0.2])
+        self._sweepGetVoxel = self.noa.world.getBlockSolidity.bind(self.noa.world)
+        self._sweepVec = vec3.create()
+        self._sweepHit = () => true
     }
-    return dist
+    var pos = vec3.copy(self._sweepVec, self._localGetTargetPosition())
+    vec3.add(pos, pos, self.noa.worldOriginOffset)
+    for (var i = 0; i < 3; i++) pos[i] -= 0.1
+    self._sweepBox.setPosition(pos)
+    var dist = Math.max(self.zoomDistance, self.currentZoom) + 0.1
+    vec3.scale(self._sweepVec, self.getDirection(), -dist)
+    return sweep(self._sweepGetVoxel, self._sweepBox, self._sweepVec, self._sweepHit, true)
 }
 
 

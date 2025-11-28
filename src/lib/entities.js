@@ -425,6 +425,25 @@ export class Entities extends ECS {
     dispose() {
         if (this._disposed) return
         this._disposed = true
+
+        // Clear global callback to prevent closure retention
+        this.onPairwiseEntityCollision = null
+
+        // Clear accessor function references to release storage closures
+        this.cameraSmoothed = null
+        this.hasPhysics = null
+        this.hasPosition = null
+        this.getPositionData = null
+        this.getPosition = null
+        this.getPhysics = null
+        this.getPhysicsBody = null
+        this.hasMesh = null
+        this.getMeshData = null
+        this.getMovement = null
+        this.getCollideTerrain = null
+        this.getCollideEntities = null
+
+        // Delete all entities (triggers onRemove handlers for cleanup)
         var ids = new Set()
         if (this._storage) {
             Object.keys(this._storage).forEach(compName => {
@@ -436,16 +455,22 @@ export class Entities extends ECS {
             })
         }
         ids.forEach(id => this.deleteEntity(id))
+
+        // Dispose component stores
         if (this._storage) {
             Object.keys(this._storage).forEach(compName => {
                 var store = this._storage[compName]
                 if (store && typeof store.dispose === 'function') store.dispose()
             })
         }
+
+        // Clear remaining references
         this.components = {}
         this.comps = this.components
         this._systems.length = 0
         this._renderSystems.length = 0
+        this.names = null
+        this.noa = null
     }
 }
 
