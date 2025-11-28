@@ -116,6 +116,20 @@ export class Rendering {
         /** the Babylon.js FreeCamera that renders the scene */
         this.camera = null
 
+        // Scene readiness tracking
+        /** @internal */
+        this._sceneIsReady = false
+        /** @internal */
+        this._sceneReadyCallbacks = []
+        /** @internal - RAF ID for cancellation on dispose */
+        this._sceneReadyPollId = null
+        /**
+         * Promise that resolves when the Babylon.js scene is fully ready.
+         * Use this to defer visual system initialization.
+         * @type {Promise<void>}
+         */
+        this.sceneReady = null // initialized in _initScene
+
         // sets up babylon scene, lights, etc
         this._initScene(canvas, opts)
 
@@ -191,6 +205,57 @@ export class Rendering {
         this._pickRay = new Ray(this._pickOriginVec, this._pickDirectionVec, 1)
         /** @internal */
         this._terrainPickPredicate = (mesh) => mesh.metadata && mesh.metadata.noa_chunk_terrain_mesh
+
+        // Set up scene readiness tracking AFTER all initial scene setup
+        // NOTE: Babylon's onReadyObservable and executeWhenReady fire BEFORE shaders
+        // are actually compiled. We must poll scene.isReady() to ensure true readiness.
+        var self = this
+        this.sceneReady = new Promise((resolve) => {
+            // Check if already ready (unlikely but possible)
+            if (scene.isReady()) {
+                self._sceneIsReady = true
+                resolve()
+                return
+            }
+
+            // Poll for scene.isReady() using requestAnimationFrame
+            // This ensures we wait for actual shader compilation, not just queued resources
+            var pollCount = 0
+            var maxPolls = 300 // ~5 seconds at 60fps
+
+            function pollReady() {
+                // Clear pending ID since we're now executing
+                self._sceneReadyPollId = null
+                // Stop polling if disposed
+                if (self._disposed) return
+                pollCount++
+                if (scene.isReady()) {
+                    self._sceneIsReady = true
+                    // Call any queued callbacks
+                    for (var cb of self._sceneReadyCallbacks) {
+                        try { cb() } catch (e) { console.error('[noa] sceneReady callback error:', e) }
+                    }
+                    self._sceneReadyCallbacks = []
+                    resolve()
+                } else if (pollCount >= maxPolls) {
+                    // Timeout - resolve anyway to prevent hanging, but log warning
+                    console.warn('[noa] Scene ready timeout after', pollCount, 'polls - proceeding anyway')
+                    console.warn('[noa] scene.isReady():', scene.isReady())
+                    self._sceneIsReady = true
+                    for (var cb of self._sceneReadyCallbacks) {
+                        try { cb() } catch (e) { console.error('[noa] sceneReady callback error:', e) }
+                    }
+                    self._sceneReadyCallbacks = []
+                    resolve()
+                } else {
+                    // Keep polling - store ID for potential cancellation
+                    self._sceneReadyPollId = requestAnimationFrame(pollReady)
+                }
+            }
+
+            // Start polling on next frame (give Babylon a chance to queue resources)
+            self._sceneReadyPollId = requestAnimationFrame(pollReady)
+        })
     }
 }
 
@@ -204,6 +269,33 @@ export class Rendering {
 /** The Babylon `scene` object representing the game world. */
 Rendering.prototype.getScene = function () {
     return this.scene
+}
+
+/**
+ * Whether the Babylon.js scene is fully initialized and ready for use.
+ * Check this before creating meshes/materials if you need synchronous access.
+ * @returns {boolean}
+ */
+Rendering.prototype.isSceneReady = function () {
+    return this._sceneIsReady
+}
+
+/**
+ * Register a callback to be called when the scene is ready.
+ * If the scene is already ready, the callback is invoked immediately.
+ * This is the recommended way to defer visual system initialization.
+ *
+ * @param {() => void} callback - Function to call when scene is ready
+ */
+Rendering.prototype.onSceneReady = function (callback) {
+    if (typeof callback !== 'function') return
+    if (this._sceneIsReady) {
+        // Scene already ready - call immediately
+        try { callback() } catch (e) { console.error('[noa] onSceneReady callback error:', e) }
+    } else {
+        // Queue for later
+        this._sceneReadyCallbacks.push(callback)
+    }
 }
 
 // Allow callers to tweak or disable the built-in directional light
@@ -275,6 +367,17 @@ Rendering.prototype.postRender = function () {
 Rendering.prototype.dispose = function () {
     if (this._disposed) return
     this._disposed = true
+
+    // Cancel any pending scene ready polling
+    if (this._sceneReadyPollId !== null) {
+        cancelAnimationFrame(this._sceneReadyPollId)
+        this._sceneReadyPollId = null
+    }
+
+    // Clear scene ready callbacks to prevent memory leaks
+    this._sceneReadyCallbacks = []
+    this._sceneIsReady = false
+
     if (this.scene) {
         this.scene.meshes.slice().forEach(mesh => {
             if (!mesh.isDisposed()) mesh.dispose()

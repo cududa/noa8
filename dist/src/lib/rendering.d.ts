@@ -50,6 +50,18 @@ export class Rendering {
     light: DirectionalLight;
     /** the Babylon.js FreeCamera that renders the scene */
     camera: FreeCamera;
+    /** @internal */
+    _sceneIsReady: boolean;
+    /** @internal */
+    _sceneReadyCallbacks: any[];
+    /** @internal - RAF ID for cancellation on dispose */
+    _sceneReadyPollId: any;
+    /**
+     * Promise that resolves when the Babylon.js scene is fully ready.
+     * Use this to defer visual system initialization.
+     * @type {Promise<void>}
+     */
+    sceneReady: Promise<void>;
     /**
      * Constructor helper - set up the Babylon.js scene and basic components
      * @internal
@@ -75,6 +87,20 @@ export class Rendering {
     _terrainPickPredicate: (mesh: any) => any;
     /** The Babylon `scene` object representing the game world. */
     getScene(): Scene;
+    /**
+     * Whether the Babylon.js scene is fully initialized and ready for use.
+     * Check this before creating meshes/materials if you need synchronous access.
+     * @returns {boolean}
+     */
+    isSceneReady(): boolean;
+    /**
+     * Register a callback to be called when the scene is ready.
+     * If the scene is already ready, the callback is invoked immediately.
+     * This is the recommended way to defer visual system initialization.
+     *
+     * @param {() => void} callback - Function to call when scene is ready
+     */
+    onSceneReady(callback: () => void): void;
     setMainLightOptions(opts: any): void;
     excludeMeshFromMainLight(mesh: any, includeDescendants?: boolean): void;
     includeMeshInMainLight(mesh: any, includeDescendants?: boolean): void;
