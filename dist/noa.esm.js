@@ -10685,7 +10685,10 @@ var hlpos = [];
 Rendering.prototype.addMeshToScene = function (mesh, isStatic = false, pos = null, containingChunk = null) {
     if (!mesh.metadata) mesh.metadata = {};
     // Babylon 8 expects meshes to have a _currentLOD map; ensure it exists for any mesh added
-    if (mesh._internalAbstractMeshDataInfo && !mesh._internalAbstractMeshDataInfo._currentLOD) {
+    // Create the internal data structure if it doesn't exist (needed for freshly created meshes)
+    if (!mesh._internalAbstractMeshDataInfo) {
+        mesh._internalAbstractMeshDataInfo = { _currentLOD: new Map() };
+    } else if (!mesh._internalAbstractMeshDataInfo._currentLOD) {
         mesh._internalAbstractMeshDataInfo._currentLOD = new Map();
     }
 
