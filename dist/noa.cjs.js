@@ -1,50 +1,40 @@
 'use strict';
 
-var engine = require('@babylonjs/core/Engines/engine');
-var scene = require('@babylonjs/core/scene');
-var freeCamera = require('@babylonjs/core/Cameras/freeCamera');
-var math_vector = require('@babylonjs/core/Maths/math.vector');
-var math_color = require('@babylonjs/core/Maths/math.color');
-var material = require('@babylonjs/core/Materials/material');
-var standardMaterial = require('@babylonjs/core/Materials/standardMaterial');
-var materialPluginBase = require('@babylonjs/core/Materials/materialPluginBase');
+var discBuilder = require('@babylonjs/core/Meshes/Builders/discBuilder');
+var transformNode = require('@babylonjs/core/Meshes/transformNode');
 var texture = require('@babylonjs/core/Materials/Textures/texture');
+var materialPluginBase = require('@babylonjs/core/Materials/materialPluginBase');
+var engine = require('@babylonjs/core/Engines/engine');
 var rawTexture2DArray = require('@babylonjs/core/Materials/Textures/rawTexture2DArray');
 var mesh = require('@babylonjs/core/Meshes/mesh');
 var mesh_vertexData = require('@babylonjs/core/Meshes/mesh.vertexData');
-var transformNode = require('@babylonjs/core/Meshes/transformNode');
-var planeBuilder = require('@babylonjs/core/Meshes/Builders/planeBuilder');
-var discBuilder = require('@babylonjs/core/Meshes/Builders/discBuilder');
-var linesBuilder = require('@babylonjs/core/Meshes/Builders/linesBuilder');
-var directionalLight = require('@babylonjs/core/Lights/directionalLight');
-var octree = require('@babylonjs/core/Culling/Octrees/octree');
-var octreeBlock = require('@babylonjs/core/Culling/Octrees/octreeBlock');
 var octreeSceneComponent = require('@babylonjs/core/Culling/Octrees/octreeSceneComponent');
+var octree = require('@babylonjs/core/Culling/Octrees/octree');
+var math_vector = require('@babylonjs/core/Maths/math.vector');
+var octreeBlock = require('@babylonjs/core/Culling/Octrees/octreeBlock');
+var scene = require('@babylonjs/core/scene');
+var freeCamera = require('@babylonjs/core/Cameras/freeCamera');
+var planeBuilder = require('@babylonjs/core/Meshes/Builders/planeBuilder');
+var math_color = require('@babylonjs/core/Maths/math.color');
+var directionalLight = require('@babylonjs/core/Lights/directionalLight');
 var ray = require('@babylonjs/core/Culling/ray');
-require('@babylonjs/core/Meshes/thinInstanceMesh');
-require('@babylonjs/core/Meshes/instancedMesh');
+var material = require('@babylonjs/core/Materials/material');
+var standardMaterial = require('@babylonjs/core/Materials/standardMaterial');
+var linesBuilder = require('@babylonjs/core/Meshes/Builders/linesBuilder');
 
 function _mergeNamespaces(n, m) {
-    m.forEach(function (e) {
-        e && typeof e !== 'string' && !Array.isArray(e) && Object.keys(e).forEach(function (k) {
-            if (k !== 'default' && !(k in n)) {
-                var d = Object.getOwnPropertyDescriptor(e, k);
-                Object.defineProperty(n, k, d.get ? d : {
-                    enumerable: true,
-                    get: function () { return e[k]; }
-                });
-            }
-        });
-    });
-    return Object.freeze(n);
-}
-
-/**
- * This works around some old node-style code in a
- * dependency of box-intersect.
-*/
-if (window && !window['global']) {
-    window['global'] = window.globalThis || {};
+	m.forEach(function (e) {
+		e && typeof e !== 'string' && !Array.isArray(e) && Object.keys(e).forEach(function (k) {
+			if (k !== 'default' && !(k in n)) {
+				var d = Object.getOwnPropertyDescriptor(e, k);
+				Object.defineProperty(n, k, d.get ? d : {
+					enumerable: true,
+					get: function () { return e[k]; }
+				});
+			}
+		});
+	});
+	return Object.freeze(n);
 }
 
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
@@ -1325,8 +1315,8 @@ var glVec3 = {
 var vec3$1 = /*@__PURE__*/getDefaultExportFromCjs(glVec3);
 
 var vec3$2 = /*#__PURE__*/_mergeNamespaces({
-    __proto__: null,
-    default: vec3$1
+	__proto__: null,
+	default: vec3$1
 }, [glVec3]);
 
 function iota$1(n) {
@@ -10573,11 +10563,17 @@ Rendering.prototype.tick = function (dt) {
 
 /** @internal */
 Rendering.prototype.render = function () {
+    profile_hook$1();
     updateCameraForRender(this);
+    profile_hook$1();
     this.engine.beginFrame();
+    profile_hook$1();
     this.scene.render();
+    profile_hook$1();
     fps_hook();
     this.engine.endFrame();
+    profile_hook$1();
+    profile_hook$1();
 };
 
 
@@ -11003,6 +10999,14 @@ Rendering.prototype.debug_MeshCount = function () {
     });
     for (var s in ct) console.log('   ' + (ct[s] + '       ').substr(0, 7) + s);
 };
+
+
+
+
+
+
+
+var profile_hook$1 = () => { };
 
 
 
@@ -13153,13 +13157,13 @@ function shoulderPreRotation(side, down, out, rollIn, yawIn) {
 }
 
 var skeletonUtils = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    applyBoneRotation: applyBoneRotation,
-    qAxis: qAxis,
-    shoulderPreRotation: shoulderPreRotation
+	__proto__: null,
+	applyBoneRotation: applyBoneRotation,
+	qAxis: qAxis,
+	shoulderPreRotation: shoulderPreRotation
 });
 
-var version$1 = "0.34.0";
+var version$1 = "0.35.0";
 var packageJSON = {
 	version: version$1};
 

@@ -1,6 +1,6 @@
 {
     "name": "noa-engine",
-    "version": "0.34.0",
+    "version": "0.35.0",
     "type": "module",
     "description": "Experimental voxel game engine",
     "main": "dist/noa.cjs.js",
@@ -12,8 +12,12 @@
             "require": "./dist/noa.cjs.js",
             "types": "./dist/src/index.d.ts"
         },
+        "./baking": {
+            "import": "./src/lib/baking/index.js"
+        },
         "./src/*": "./src/*"
     },
+    "sideEffects": false,
     "files": [
         "/src",
         "/dist"
