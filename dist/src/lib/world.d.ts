@@ -196,6 +196,37 @@ export class World extends EventEmitter {
      */
     setAddRemoveDistance(addDist?: number | number[], remDist?: number | number[]): void;
     /**
+     * Automatically configure chunk load/unload distances based on a baked world's bounds
+     * and the player's spawn position. This ensures all chunks within the baked area
+     * are loadable from the spawn point, avoiding procedural generation overhead
+     * and reducing memory usage.
+     *
+     * @param {{getWorldBounds: () => {minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, chunkSize: number}}} loader - A loaded BakedWorldLoader instance
+     * @param {[number, number, number]} [spawnPosition=[0,0,0]] - Player spawn position in world coordinates
+     * @param {object} [options] - Optional configuration
+     * @param {number} [options.buffer=1] - Extra chunks to load beyond minimum required (reduces pop-in when moving)
+     * @example
+     * ```js
+     * const loader = new BakedWorldLoader()
+     * await loader.loadFromURL('/world.noaworld')
+     * // Configure based on spawn position with extra buffer for smoother loading
+     * noa.world.setAddRemoveDistanceFromBakedWorld(loader, [15, 5, 0], { buffer: 2 })
+     * ```
+     */
+    setAddRemoveDistanceFromBakedWorld(loader: {
+        getWorldBounds: () => {
+            minX: number;
+            maxX: number;
+            minY: number;
+            maxY: number;
+            minZ: number;
+            maxZ: number;
+            chunkSize: number;
+        };
+    }, spawnPosition?: [number, number, number], options?: {
+        buffer?: number;
+    }): void;
+    /**
      * Tells noa to discard voxel data within a given `AABB` (e.g. because
      * the game client received updated data from a server).
      * The engine will mark all affected chunks for removal, and will later emit

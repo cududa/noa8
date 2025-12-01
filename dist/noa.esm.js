@@ -12301,6 +12301,88 @@ World.prototype.setAddRemoveDistance = function (addDist = 2, remDist = 3) {
 };
 
 
+/**
+ * Automatically configure chunk load/unload distances based on a baked world's bounds
+ * and the player's spawn position. This ensures all chunks within the baked area
+ * are loadable from the spawn point, avoiding procedural generation overhead
+ * and reducing memory usage.
+ *
+ * @param {{getWorldBounds: () => {minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, chunkSize: number}}} loader - A loaded BakedWorldLoader instance
+ * @param {[number, number, number]} [spawnPosition=[0,0,0]] - Player spawn position in world coordinates
+ * @param {object} [options] - Optional configuration
+ * @param {number} [options.buffer=1] - Extra chunks to load beyond minimum required (reduces pop-in when moving)
+ * @example
+ * ```js
+ * const loader = new BakedWorldLoader()
+ * await loader.loadFromURL('/world.noaworld')
+ * // Configure based on spawn position with extra buffer for smoother loading
+ * noa.world.setAddRemoveDistanceFromBakedWorld(loader, [15, 5, 0], { buffer: 2 })
+ * ```
+ */
+World.prototype.setAddRemoveDistanceFromBakedWorld = function (loader, spawnPosition, options) {
+    if (!loader || typeof loader.getWorldBounds !== 'function') {
+        console.warn('[noa] Invalid loader passed to setAddRemoveDistanceFromBakedWorld');
+        return
+    }
+
+    var bounds = loader.getWorldBounds();
+
+    // Validate bounds object
+    if (!bounds ||
+        typeof bounds.minX !== 'number' || typeof bounds.maxX !== 'number' ||
+        typeof bounds.minY !== 'number' || typeof bounds.maxY !== 'number' ||
+        typeof bounds.minZ !== 'number' || typeof bounds.maxZ !== 'number') {
+        console.warn('[noa] Invalid bounds returned from loader.getWorldBounds()');
+        return
+    }
+
+    var chunkSize = bounds.chunkSize || this._chunkSize;
+    var buffer = (options && typeof options.buffer === 'number') ? options.buffer : 1;
+
+    // Default spawn to origin if not provided
+    var spawnX = (spawnPosition && spawnPosition[0]) || 0;
+    var spawnY = (spawnPosition && spawnPosition[1]) || 0;
+    var spawnZ = (spawnPosition && spawnPosition[2]) || 0;
+
+    // Convert spawn position to chunk indices
+    var spawnChunkX = Math.floor(spawnX / chunkSize);
+    var spawnChunkY = Math.floor(spawnY / chunkSize);
+    var spawnChunkZ = Math.floor(spawnZ / chunkSize);
+
+    // Calculate distance from spawn chunk to each bound of the baked world
+    var distToMinX = Math.abs(spawnChunkX - bounds.minX);
+    var distToMaxX = Math.abs(spawnChunkX - bounds.maxX);
+    var distToMinZ = Math.abs(spawnChunkZ - bounds.minZ);
+    var distToMaxZ = Math.abs(spawnChunkZ - bounds.maxZ);
+    var distToMinY = Math.abs(spawnChunkY - bounds.minY);
+    var distToMaxY = Math.abs(spawnChunkY - bounds.maxY);
+
+    // Take the maximum distance in each dimension to ensure full coverage
+    var maxHoriz = Math.max(distToMinX, distToMaxX, distToMinZ, distToMaxZ);
+    var maxVert = Math.max(distToMinY, distToMaxY);
+
+    // Add buffer for smoother chunk loading when player moves around
+    maxHoriz = maxHoriz + buffer;
+    maxVert = maxVert + buffer;
+
+    // Ensure minimum distance of 1 chunk to always load something
+    maxHoriz = Math.max(1, maxHoriz);
+    maxVert = Math.max(1, maxVert);
+
+    // Warn if distances are unusually large (potential memory issue)
+    if (maxHoriz > 20 || maxVert > 10) {
+        console.warn('[noa] Large chunk distances configured (add=[' + maxHoriz + ',' + maxVert + ']). ' +
+            'This may use significant memory. Consider spawning closer to center of baked world.');
+    }
+
+    // Set distances with +1 buffer for remove distance (hysteresis)
+    this.setAddRemoveDistance([maxHoriz, maxVert], [maxHoriz + 1, maxVert + 1]);
+
+    console.log('[noa] Auto-configured chunk distances from baked world: ' +
+        'spawn chunk=[' + spawnChunkX + ',' + spawnChunkY + ',' + spawnChunkZ + '], ' +
+        'add=[' + maxHoriz + ',' + maxVert + '], ' +
+        'remove=[' + (maxHoriz + 1) + ',' + (maxVert + 1) + ']');
+};
 
 
 
