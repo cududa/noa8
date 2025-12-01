@@ -190,6 +190,11 @@ export class BakedWorldLoader {
             arr.fill(entry.fillBlockId)
         } else {
             // Non-uniform chunk - read from data section
+            // If buffer was released, we can't load this chunk
+            if (!this._buffer) {
+                console.warn(`[BakedWorldLoader] Buffer released, cannot load chunk (${x},${y},${z})`)
+                return null
+            }
             // Create a copy to avoid issues with the underlying buffer
             const byteOffset = this._dataOffset + entry.dataOffset
             const sourceView = new Uint16Array(this._buffer, byteOffset, voxelCount)
@@ -252,6 +257,57 @@ export class BakedWorldLoader {
 
             return { voxelData }
         }
+    }
+
+    /**
+     * Pre-extract all chunks into cache and release the raw ArrayBuffer.
+     * Call this after initial world loading is complete.
+     *
+     * Note: This doesn't necessarily reduce total memory - it trades the packed
+     * buffer for individual Uint16Array chunks in cache. The benefit is releasing
+     * the contiguous buffer allocation and allowing individual chunk GC if needed.
+     *
+     * After calling this, chunks are served from cache only - chunks not in cache
+     * cannot be loaded (getChunk returns null with a warning).
+     *
+     * @returns {number} Number of chunks that were extracted (not already in cache)
+     */
+    releaseBuffer() {
+        if (!this._buffer) return 0
+
+        // Count non-uniform chunks that need to be cached
+        let nonUniformCount = 0
+        for (const entry of this._chunkIndex.values()) {
+            if (!(entry.flags & CHUNK_FLAG_UNIFORM)) {
+                nonUniformCount++
+            }
+        }
+
+        // Expand cache to hold ALL non-uniform chunks before extraction
+        // This prevents LRU eviction from losing chunks before buffer is released
+        if (nonUniformCount > this._cacheSize) {
+            console.log(`[BakedWorldLoader] Expanding cache from ${this._cacheSize} to ${nonUniformCount} to hold all chunks`)
+            this._cacheSize = nonUniformCount
+        }
+
+        // Extract all non-uniform chunks into cache (uniform chunks don't need the buffer)
+        let extracted = 0
+        for (const [key, entry] of this._chunkIndex.entries()) {
+            if (!(entry.flags & CHUNK_FLAG_UNIFORM) && !this._chunkCache.has(key)) {
+                // Force load into cache
+                this.getChunk(entry.x, entry.y, entry.z)
+                extracted++
+            }
+        }
+
+        // Now release the buffer - chunks are served from cache
+        const freedBytes = this._buffer.byteLength
+        this._buffer = null
+        this._view = null
+        this._dataOffset = 0
+
+        console.log(`[BakedWorldLoader] Released buffer (${(freedBytes / 1024 / 1024).toFixed(1)}MB), ${this._chunkCache.size} chunks in cache`)
+        return extracted
     }
 
     /**

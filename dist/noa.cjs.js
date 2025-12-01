@@ -12217,6 +12217,19 @@ World.prototype.setBlockID = function (id = 0, x = 0, y = 0, z = 0) {
  */
 World.prototype.registerChunkGenerator = function (generatorFn) {
     this._asyncChunkGenerator = generatorFn;
+
+    // Re-request any chunks that were requested before the generator was registered
+    // These would have emitted worldDataNeeded events with no handler
+    var pendingCount = this._chunksPending.count();
+    if (pendingCount > 0) {
+        console.log(`[noa:world] Re-requesting ${pendingCount} pending chunks`);
+        var pending = this._chunksPending.arr.slice(); // copy array
+        this._chunksPending.empty();
+        var world = this;
+        pending.forEach(function(loc) {
+            requestNewChunk(world, loc[0], loc[1], loc[2]);
+        });
+    }
 };
 
 
