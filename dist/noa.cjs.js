@@ -7211,6 +7211,15 @@ function shadowComp (noa, distance = 10) {
     disc.material = mat;
     mat.freeze();
 
+    // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue
+    // SubMesh returns _boundingInfo (null) unless IsGlobal is true
+    // IsGlobal is read-only, so we set _boundingInfo directly
+    disc.refreshBoundingInfo();
+    var discBi = disc.getBoundingInfo();
+    if (disc.subMeshes && discBi) {
+        disc.subMeshes.forEach(sm => { /** @type {any} */ (sm)._boundingInfo = discBi; });
+    }
+
     // source mesh needn't be in the scene graph
     noa.rendering.setMeshVisibility(disc, false);
 
@@ -7229,6 +7238,10 @@ function shadowComp (noa, distance = 10) {
 
         onAdd: function (eid, state) {
             var mesh = disc.createInstance('shadow_instance');
+            // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue for instances
+            if (mesh.subMeshes && discBi) {
+                mesh.subMeshes.forEach(sm => { /** @type {any} */ (sm)._boundingInfo = discBi; });
+            }
             noa.rendering.addMeshToScene(mesh);
             mesh.setEnabled(false);
             state._mesh = mesh;
@@ -10568,7 +10581,46 @@ Rendering.prototype.render = function () {
     profile_hook$1();
     this.engine.beginFrame();
     profile_hook$1();
-    this.scene.render();
+    // Before rendering, ensure all meshes have valid boundingInfo
+    // This prevents "Cannot read properties of undefined (reading 'boundingSphere')"
+    // errors during Babylon's transparent mesh sorting
+    this.scene.meshes.forEach(mesh => {
+        if (!mesh.metadata) mesh.metadata = {};
+        if (mesh.metadata._noaBoundingChecked) return
+        var bi = null;
+        try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo(); } catch (e) {}
+        if (!bi || !bi.boundingSphere) {
+            mesh.isVisible = false;
+            console.log('[noa] Hidden mesh without boundingInfo:', mesh.name);
+        }
+        mesh.metadata._noaBoundingChecked = true;
+    });
+    try {
+        this.scene.render();
+    } catch (e) {
+        if (e.message && e.message.includes('boundingSphere') && !this._errorLogged) {
+            this._errorLogged = true;
+            console.error('[noa] boundingSphere error! Checking all meshes and submeshes...');
+            this.scene.meshes.forEach((mesh, i) => {
+                var bi = null;
+                try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo(); } catch (e2) {}
+                if (!bi || !bi.boundingSphere) {
+                    console.error('[noa] BAD MESH:', i, mesh.name, 'bi:', bi);
+                }
+                // Check submeshes
+                if (mesh.subMeshes) {
+                    mesh.subMeshes.forEach((sm, j) => {
+                        var smBi = null;
+                        try { smBi = sm.getBoundingInfo && sm.getBoundingInfo(); } catch (e2) {}
+                        if (!smBi || !smBi.boundingSphere) {
+                            console.error('[noa] BAD SUBMESH:', mesh.name, 'submesh', j, 'bi:', smBi);
+                        }
+                    });
+                }
+            });
+        }
+        throw e
+    }
     profile_hook$1();
     fps_hook();
     this.engine.endFrame();
@@ -10692,6 +10744,28 @@ Rendering.prototype.addMeshToScene = function (mesh, isStatic = false, pos = nul
         mesh._internalAbstractMeshDataInfo = { _currentLOD: new Map() };
     } else if (!mesh._internalAbstractMeshDataInfo._currentLOD) {
         mesh._internalAbstractMeshDataInfo._currentLOD = new Map();
+    }
+
+    // Check for valid boundingInfo - meshes without it (like __root__ from GLB) cause
+    // "Cannot read properties of undefined (reading 'boundingSphere')" during transparent sorting
+    var bi = mesh.getBoundingInfo && mesh.getBoundingInfo();
+    if (!bi || !bi.boundingSphere) {
+        // Hide meshes without boundingInfo to prevent Babylon's transparent sorting from crashing
+        mesh.isVisible = false;
+        return
+    }
+
+    // Ensure submeshes have valid boundingInfo for Babylon's transparent mesh sorting
+    // SubMesh.getBoundingInfo() returns: IsGlobal || hasThinInstances ? mesh.getBoundingInfo() : _boundingInfo
+    // For most meshes, IsGlobal is read-only and hasThinInstances is false, so it returns _boundingInfo
+    // which may be null. Fix by setting _boundingInfo on each submesh.
+    if (mesh.subMeshes && mesh.subMeshes.length > 0) {
+        for (var i = 0; i < mesh.subMeshes.length; i++) {
+            var sm = mesh.subMeshes[i];
+            if (!sm._boundingInfo) {
+                sm._boundingInfo = bi;
+            }
+        }
     }
 
     // if mesh is already added, just make sure it's visisble

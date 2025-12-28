@@ -19,6 +19,15 @@ export default function (noa, distance = 10) {
     disc.material = mat
     mat.freeze()
 
+    // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue
+    // SubMesh returns _boundingInfo (null) unless IsGlobal is true
+    // IsGlobal is read-only, so we set _boundingInfo directly
+    disc.refreshBoundingInfo()
+    var discBi = disc.getBoundingInfo()
+    if (disc.subMeshes && discBi) {
+        disc.subMeshes.forEach(sm => { /** @type {any} */ (sm)._boundingInfo = discBi })
+    }
+
     // source mesh needn't be in the scene graph
     noa.rendering.setMeshVisibility(disc, false)
 
@@ -37,6 +46,10 @@ export default function (noa, distance = 10) {
 
         onAdd: function (eid, state) {
             var mesh = disc.createInstance('shadow_instance')
+            // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue for instances
+            if (mesh.subMeshes && discBi) {
+                mesh.subMeshes.forEach(sm => { /** @type {any} */ (sm)._boundingInfo = discBi })
+            }
             noa.rendering.addMeshToScene(mesh)
             mesh.setEnabled(false)
             state._mesh = mesh

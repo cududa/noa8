@@ -108,6 +108,7 @@ export class Rendering {
     tick(dt: any): void;
     /** @internal */
     render(): void;
+    _errorLogged: boolean;
     /** @internal */
     postRender(): void;
     dispose(): void;
