@@ -160,6 +160,121 @@ export class Rendering {
      * @returns {StandardMaterial}
      */
     makeStandardMaterial(name: any): StandardMaterial;
+    get meshBuilder(): {
+        CreateBox: typeof import("@babylonjs/core").CreateBox;
+        CreateTiledBox: typeof import("@babylonjs/core").CreateTiledBox;
+        CreateSphere: typeof import("@babylonjs/core").CreateSphere;
+        CreateDisc: typeof import("@babylonjs/core").CreateDisc;
+        CreateIcoSphere: typeof import("@babylonjs/core").CreateIcoSphere;
+        CreateRibbon: typeof import("@babylonjs/core").CreateRibbon;
+        CreateCylinder: typeof import("@babylonjs/core").CreateCylinder;
+        CreateTorus: typeof import("@babylonjs/core").CreateTorus;
+        CreateTorusKnot: typeof import("@babylonjs/core").CreateTorusKnot;
+        CreateLineSystem: typeof import("@babylonjs/core").CreateLineSystem;
+        CreateLines: typeof CreateLines;
+        CreateDashedLines: typeof import("@babylonjs/core").CreateDashedLines;
+        ExtrudeShape: typeof import("@babylonjs/core").ExtrudeShape;
+        ExtrudeShapeCustom: typeof import("@babylonjs/core").ExtrudeShapeCustom;
+        CreateLathe: typeof import("@babylonjs/core").CreateLathe;
+        CreateTiledPlane: typeof import("@babylonjs/core").CreateTiledPlane;
+        CreatePlane: typeof CreatePlane;
+        CreateGround: typeof import("@babylonjs/core").CreateGround;
+        CreateTiledGround: typeof import("@babylonjs/core").CreateTiledGround;
+        CreateGroundFromHeightMap: typeof import("@babylonjs/core").CreateGroundFromHeightMap;
+        CreatePolygon: typeof import("@babylonjs/core").CreatePolygon;
+        ExtrudePolygon: typeof import("@babylonjs/core").ExtrudePolygon;
+        CreateTube: typeof import("@babylonjs/core").CreateTube;
+        CreatePolyhedron: typeof import("@babylonjs/core").CreatePolyhedron;
+        CreateGeodesic: typeof import("@babylonjs/core").CreateGeodesic;
+        CreateGoldberg: typeof import("@babylonjs/core").CreateGoldberg;
+        CreateDecal: typeof import("@babylonjs/core").CreateDecal;
+        CreateCapsule: typeof import("@babylonjs/core").CreateCapsule;
+        CreateText: typeof import("@babylonjs/core").CreateText;
+    };
+    /**
+     * Create a StandardMaterial with common options.
+     * This is a convenience factory - the returned material is NOT tracked internally.
+     * Caller is responsible for disposal.
+     *
+     * @param {string} name - Material name
+     * @param {object} [options] - Material options
+     * @param {number[]|Color3} [options.diffuseColor] - Diffuse color (default: white)
+     * @param {number[]|Color3} [options.emissiveColor] - Emissive color (default: black)
+     * @param {number[]|Color3} [options.specularColor] - Specular color (default: black)
+     * @param {number} [options.specularPower] - Specular power (default: 64)
+     * @param {number} [options.alpha] - Alpha value 0-1 (default: 1)
+     * @param {boolean} [options.wireframe] - Wireframe mode (default: false)
+     * @param {boolean} [options.backFaceCulling] - Back face culling (default: true)
+     * @param {number} [options.maxSimultaneousLights] - Max lights (default: 4)
+     * @returns {StandardMaterial}
+     */
+    createStandardMaterial(name: string, options?: {
+        diffuseColor?: number[] | Color3;
+        emissiveColor?: number[] | Color3;
+        specularColor?: number[] | Color3;
+        specularPower?: number;
+        alpha?: number;
+        wireframe?: boolean;
+        backFaceCulling?: boolean;
+        maxSimultaneousLights?: number;
+    }): StandardMaterial;
+    /**
+     * Create a ShaderMaterial from inline GLSL source code.
+     * This is a convenience factory - the returned material is NOT tracked internally.
+     * Caller is responsible for disposal.
+     *
+     * @param {string} name - Material name
+     * @param {string} vertexSource - GLSL vertex shader source
+     * @param {string} fragmentSource - GLSL fragment shader source
+     * @param {object} [options] - Shader options
+     * @param {string[]} [options.attributes] - Vertex attributes (default: ['position', 'normal'])
+     * @param {string[]} [options.uniforms] - Uniform names (default: ['world', 'viewProjection'])
+     * @param {string[]} [options.samplers] - Texture sampler names (default: [])
+     * @param {string[]} [options.defines] - Preprocessor defines (default: [])
+     * @param {string[]} [options.uniformBuffers] - Uniform buffer names (default: undefined)
+     * @param {boolean} [options.needInstancing] - Add instancing attributes world0-3 (default: false)
+     * @param {boolean} [options.needAlphaBlending] - Force alpha blending (default: false)
+     * @param {boolean} [options.backFaceCulling] - Back face culling (default: true)
+     * @param {number} [options.alphaMode] - Alpha blending mode (default: undefined/opaque)
+     * @returns {ShaderMaterial}
+     */
+    createShaderMaterial(name: string, vertexSource: string, fragmentSource: string, options?: {
+        attributes?: string[];
+        uniforms?: string[];
+        samplers?: string[];
+        defines?: string[];
+        uniformBuffers?: string[];
+        needInstancing?: boolean;
+        needAlphaBlending?: boolean;
+        backFaceCulling?: boolean;
+        alphaMode?: number;
+    }): ShaderMaterial;
+    /**
+     * Load a GLB/glTF model and register its meshes with noa.
+     *
+     * MEMORY: The returned cleanup function MUST be called when the model is no longer
+     * needed. This function holds no internal references to loaded models.
+     *
+     * @param {string} url - URL to the GLB/glTF file
+     * @param {object} [options] - Loading options
+     * @param {number|number[]} [options.scale] - Scale factor (number or [x,y,z])
+     * @param {boolean} [options.convertToStandard] - Auto-convert PBR materials to StandardMaterial
+     * @param {(material: any, mesh: any) => any} [options.onMaterialLoaded] - Transform materials (overrides convertToStandard)
+     * @param {boolean} [options.registerMeshes] - Auto-register meshes with noa (default: true)
+     * @returns {Promise<{rootMesh: any, meshes: any[], skeletons: any[], animationGroups: any[], cleanup: () => void}>}
+     */
+    loadModel(url: string, options?: {
+        scale?: number | number[];
+        convertToStandard?: boolean;
+        onMaterialLoaded?: (material: any, mesh: any) => any;
+        registerMeshes?: boolean;
+    }): Promise<{
+        rootMesh: any;
+        meshes: any[];
+        skeletons: any[];
+        animationGroups: any[];
+        cleanup: () => void;
+    }>;
     /**
      * Convert world coordinates to local (rendering) coordinates.
      * Use this when setting mesh.position for meshes registered with noa.
@@ -267,3 +382,7 @@ import { StandardMaterial } from './babylonExports.js';
 import { Vector3 } from './babylonExports.js';
 import { Ray } from './babylonExports.js';
 import { HemisphericLight } from './babylonExports.js';
+import { CreateLines } from './babylonExports.js';
+import { CreatePlane } from './babylonExports.js';
+import { Color3 } from './babylonExports.js';
+import { ShaderMaterial } from './babylonExports.js';

@@ -32,18 +32,21 @@ import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 export { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 export { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+import { MeshBuilder as MeshBuilder$1 } from '@babylonjs/core/Meshes/meshBuilder';
+export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
+import { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial';
+export { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial';
+import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
+export { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 import { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder';
 export { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder';
 export { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
 export { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 export { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
 export { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
-export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
-export { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial';
 export { Skeleton } from '@babylonjs/core/Bones/skeleton';
 export { Animation } from '@babylonjs/core/Animations/animation';
 export { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
-export { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 
 function _mergeNamespaces(n, m) {
 	m.forEach(function (e) {
@@ -11281,6 +11284,292 @@ Rendering.prototype.makeStandardMaterial = function (name) {
 };
 
 
+/**
+ * Access to Babylon.js MeshBuilder for creating primitives.
+ * All methods require the scene as the last argument.
+ *
+ * @example
+ * const scene = noa.rendering.getScene()
+ * const box = noa.rendering.meshBuilder.CreateBox('myBox', { size: 1 }, scene)
+ *
+ * @type {typeof import('@babylonjs/core').MeshBuilder}
+ */
+Object.defineProperty(Rendering.prototype, 'meshBuilder', {
+    get: function () { return MeshBuilder$1 },
+    enumerable: true
+});
+
+
+/**
+ * Create a StandardMaterial with common options.
+ * This is a convenience factory - the returned material is NOT tracked internally.
+ * Caller is responsible for disposal.
+ *
+ * @param {string} name - Material name
+ * @param {object} [options] - Material options
+ * @param {number[]|Color3} [options.diffuseColor] - Diffuse color (default: white)
+ * @param {number[]|Color3} [options.emissiveColor] - Emissive color (default: black)
+ * @param {number[]|Color3} [options.specularColor] - Specular color (default: black)
+ * @param {number} [options.specularPower] - Specular power (default: 64)
+ * @param {number} [options.alpha] - Alpha value 0-1 (default: 1)
+ * @param {boolean} [options.wireframe] - Wireframe mode (default: false)
+ * @param {boolean} [options.backFaceCulling] - Back face culling (default: true)
+ * @param {number} [options.maxSimultaneousLights] - Max lights (default: 4)
+ * @returns {StandardMaterial}
+ */
+Rendering.prototype.createStandardMaterial = function (name, options) {
+    options = options || {};
+    var mat = new StandardMaterial(name, this.scene);
+
+    // Helper to convert [r,g,b] array to Color3 or pass through existing Color3
+    function toColor3(val, fallback) {
+        if (!val) return fallback
+        if (val.r !== undefined) return val // Already Color3
+        return new Color3(val[0], val[1], val[2])
+    }
+
+    mat.diffuseColor = toColor3(options.diffuseColor, new Color3(1, 1, 1));
+    mat.emissiveColor = toColor3(options.emissiveColor, new Color3(0, 0, 0));
+    mat.specularColor = toColor3(options.specularColor, new Color3(0, 0, 0));
+    mat.ambientColor = new Color3(1, 1, 1); // noa default
+
+    if (options.specularPower !== undefined) mat.specularPower = options.specularPower;
+    if (options.alpha !== undefined) mat.alpha = options.alpha;
+    if (options.wireframe !== undefined) mat.wireframe = options.wireframe;
+    if (options.backFaceCulling !== undefined) mat.backFaceCulling = options.backFaceCulling;
+    if (options.maxSimultaneousLights !== undefined) mat.maxSimultaneousLights = options.maxSimultaneousLights;
+
+    return mat
+};
+
+
+/**
+ * Create a ShaderMaterial from inline GLSL source code.
+ * This is a convenience factory - the returned material is NOT tracked internally.
+ * Caller is responsible for disposal.
+ *
+ * @param {string} name - Material name
+ * @param {string} vertexSource - GLSL vertex shader source
+ * @param {string} fragmentSource - GLSL fragment shader source
+ * @param {object} [options] - Shader options
+ * @param {string[]} [options.attributes] - Vertex attributes (default: ['position', 'normal'])
+ * @param {string[]} [options.uniforms] - Uniform names (default: ['world', 'viewProjection'])
+ * @param {string[]} [options.samplers] - Texture sampler names (default: [])
+ * @param {string[]} [options.defines] - Preprocessor defines (default: [])
+ * @param {string[]} [options.uniformBuffers] - Uniform buffer names (default: undefined)
+ * @param {boolean} [options.needInstancing] - Add instancing attributes world0-3 (default: false)
+ * @param {boolean} [options.needAlphaBlending] - Force alpha blending (default: false)
+ * @param {boolean} [options.backFaceCulling] - Back face culling (default: true)
+ * @param {number} [options.alphaMode] - Alpha blending mode (default: undefined/opaque)
+ * @returns {ShaderMaterial}
+ */
+Rendering.prototype.createShaderMaterial = function (name, vertexSource, fragmentSource, options) {
+    options = options || {};
+    var attributes = options.attributes ? options.attributes.slice() : ['position', 'normal'];
+    var uniforms = options.uniforms ? options.uniforms.slice() : ['world', 'viewProjection'];
+
+    // Add instancing attributes if requested
+    if (options.needInstancing) {
+        if (attributes.indexOf('world0') === -1) attributes.push('world0');
+        if (attributes.indexOf('world1') === -1) attributes.push('world1');
+        if (attributes.indexOf('world2') === -1) attributes.push('world2');
+        if (attributes.indexOf('world3') === -1) attributes.push('world3');
+    }
+
+    var shaderOptions = {
+        attributes: attributes,
+        uniforms: uniforms,
+        samplers: options.samplers || [],
+        defines: options.defines || [],
+    };
+    if (options.uniformBuffers) {
+        shaderOptions.uniformBuffers = options.uniformBuffers;
+    }
+
+    var mat = new ShaderMaterial(name, this.scene, {
+        vertexElement: undefined,
+        fragmentElement: undefined,
+        vertexSource: vertexSource,
+        fragmentSource: fragmentSource,
+    }, shaderOptions);
+
+    // Apply common options
+    if (options.backFaceCulling !== undefined) {
+        mat.backFaceCulling = options.backFaceCulling;
+    } else {
+        mat.backFaceCulling = true; // Default
+    }
+
+    if (options.alphaMode !== undefined) {
+        mat.alphaMode = options.alphaMode;
+    }
+
+    if (options.needAlphaBlending) {
+        mat.needAlphaBlending = function () { return true };
+    }
+
+    return mat
+};
+
+
+/**
+ * Load a GLB/glTF model and register its meshes with noa.
+ *
+ * MEMORY: The returned cleanup function MUST be called when the model is no longer
+ * needed. This function holds no internal references to loaded models.
+ *
+ * @param {string} url - URL to the GLB/glTF file
+ * @param {object} [options] - Loading options
+ * @param {number|number[]} [options.scale] - Scale factor (number or [x,y,z])
+ * @param {boolean} [options.convertToStandard] - Auto-convert PBR materials to StandardMaterial
+ * @param {(material: any, mesh: any) => any} [options.onMaterialLoaded] - Transform materials (overrides convertToStandard)
+ * @param {boolean} [options.registerMeshes] - Auto-register meshes with noa (default: true)
+ * @returns {Promise<{rootMesh: any, meshes: any[], skeletons: any[], animationGroups: any[], cleanup: () => void}>}
+ */
+Rendering.prototype.loadModel = async function (url, options) {
+    options = options || {};
+    var self = this;
+    var scene = this.scene;
+    var registerMeshes = options.registerMeshes !== false;
+    var meshes = [];
+    var skeletons = [];
+    var animationGroups = [];
+    var rootMesh = null;
+    var cleanupFn = null;
+    var oldMaterials = [];
+
+    function disposeOldMaterials() {
+        if (!oldMaterials) return
+        for (var i = 0; i < oldMaterials.length; i++) {
+            try { oldMaterials[i].dispose(); } catch (e) { }
+        }
+        oldMaterials = null;
+    }
+
+    function disposeLoadedResources() {
+        for (var i = 0; i < animationGroups.length; i++) {
+            var ag = animationGroups[i];
+            if (ag) {
+                try { ag.dispose(); } catch (e) { }
+            }
+        }
+        for (var j = 0; j < skeletons.length; j++) {
+            var sk = skeletons[j];
+            if (sk) {
+                try { sk.dispose(); } catch (e) { }
+            }
+        }
+        for (var k = 0; k < meshes.length; k++) {
+            var mesh = meshes[k];
+            if (mesh && !mesh.isDisposed()) {
+                try { mesh.dispose(); } catch (e) { }
+            }
+        }
+    }
+
+    try {
+        // Load the model
+        var result = await SceneLoader.ImportMeshAsync('', '', url, scene);
+
+        meshes = result.meshes || [];
+        skeletons = result.skeletons || [];
+        animationGroups = result.animationGroups || [];
+
+        if (meshes.length === 0) {
+            throw new Error('No meshes found in model: ' + url)
+        }
+
+        rootMesh = meshes[0];
+
+        // Apply scale if specified
+        if (options.scale !== undefined) {
+            var s = options.scale;
+            if (typeof s === 'number') {
+                rootMesh.scaling.setAll(s);
+            } else {
+                rootMesh.scaling.set(s[0], s[1], s[2]);
+            }
+        }
+
+        // Process materials
+        if (options.onMaterialLoaded) {
+            // Custom callback for full control
+            meshes.forEach(function (mesh) {
+                if (mesh.material && mesh.name !== '__root__') {
+                    var oldMat = mesh.material;
+                    var newMat = options.onMaterialLoaded(oldMat, mesh);
+                    if (newMat && newMat !== oldMat) {
+                        mesh.material = newMat;
+                        oldMaterials.push(oldMat);
+                    }
+                }
+            });
+        } else if (options.convertToStandard) {
+            // Auto-convert PBR to StandardMaterial
+            meshes.forEach(function (mesh) {
+                if (mesh.material && mesh.name !== '__root__') {
+                    var oldMat = mesh.material;
+                    var newMat = new StandardMaterial(oldMat.name + '_std', scene);
+
+                    // Extract base color from PBR material using runtime property check
+                    var baseColor = extractPBRColor(oldMat);
+                    if (baseColor) {
+                        newMat.diffuseColor = new Color3(baseColor.r, baseColor.g, baseColor.b);
+                    } else {
+                        newMat.diffuseColor = new Color3(0.6, 0.6, 0.6);
+                    }
+
+                    newMat.specularColor = new Color3(0.1, 0.1, 0.1);
+                    newMat.ambientColor = new Color3(1, 1, 1);
+
+                    mesh.material = newMat;
+                    oldMaterials.push(oldMat);
+                }
+            });
+        }
+
+        // Dispose old materials after conversion (don't hold references)
+        disposeOldMaterials();
+
+        // Register meshes with noa if requested
+        if (registerMeshes) {
+            meshes.forEach(function (mesh) {
+                // Only register meshes with valid boundingInfo
+                var bi = mesh.getBoundingInfo && mesh.getBoundingInfo();
+                if (bi && bi.boundingSphere) {
+                    self.addMeshToScene(mesh);
+                } else {
+                    // Hide meshes without boundingInfo to prevent render errors
+                    mesh.isVisible = false;
+                }
+            });
+        }
+
+        // Create cleanup function that releases ALL references
+        cleanupFn = function () {
+            disposeLoadedResources();
+        };
+
+        return {
+            rootMesh: rootMesh,
+            meshes: meshes,
+            skeletons: skeletons,
+            animationGroups: animationGroups,
+            cleanup: cleanupFn,
+        }
+    } catch (err) {
+        disposeOldMaterials();
+        if (cleanupFn) {
+            try { cleanupFn(); } catch (cleanupErr) { }
+        } else {
+            disposeLoadedResources();
+        }
+        console.error('[noa] Failed to load model:', url, err);
+        throw err
+    }
+};
+
+
 /*
  *
  *   COORDINATE CONVERSION UTILITIES
@@ -11477,6 +11766,27 @@ Rendering.prototype.disposeChunkForRendering = function (chunk) {
 
 // Cached Vector3 for origin rebasing to avoid per-rebase allocation
 var _rebaseVec = new Vector3(0, 0, 0);
+
+/**
+ * Extract base color from a PBR material using runtime property detection.
+ * Works with PBRMaterial and PBRMetallicRoughnessMaterial.
+ * @param {object} mat - Material to extract color from
+ * @returns {{r: number, g: number, b: number} | null}
+ */
+function extractPBRColor(mat) {
+    // Check for PBR material properties at runtime
+    if ('_albedoColor' in mat && mat._albedoColor) {
+        return mat._albedoColor
+    }
+    if ('albedoColor' in mat && mat.albedoColor) {
+        return mat.albedoColor
+    }
+    // PBRMetallicRoughnessMaterial uses baseColor
+    if ('baseColor' in mat && mat.baseColor) {
+        return mat.baseColor
+    }
+    return null
+}
 
 // Cached arrays for coordinate conversion hot paths
 var _cachedLocalCoords = [0, 0, 0];
