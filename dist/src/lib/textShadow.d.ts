@@ -52,6 +52,21 @@ export class TextShadowManager {
      */
     createShadowsForText(textHandle: object, options?: TextShadowOptions | boolean): void;
     /**
+     * Re-measure/update the shadow for a text handle (e.g. when content changes)
+     * @param {object} textHandle
+     * @param {TextShadowOptions|boolean} [options]
+     */
+    refreshShadowsForText(textHandle: object, options?: TextShadowOptions | boolean): void;
+    /** @internal */
+    _createOrUpdateShadow(textHandle: any, options: any): void;
+    /** @internal */
+    _measureTextMesh(mesh: any): {
+        width: number;
+        depth: number;
+        centerOffsetX: number;
+        centerOffsetZ: number;
+    };
+    /**
      * Update all shadows (call each frame)
      */
     updateShadows(): void;

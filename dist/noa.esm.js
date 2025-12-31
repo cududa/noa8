@@ -14482,14 +14482,51 @@ class TextShadowManager {
      * @param {TextShadowOptions|boolean} [options]
      */
     createShadowsForText(textHandle, options = {}) {
+        this._createOrUpdateShadow(textHandle, options);
+    }
+
+
+    /**
+     * Re-measure/update the shadow for a text handle (e.g. when content changes)
+     * @param {object} textHandle
+     * @param {TextShadowOptions|boolean} [options]
+     */
+    refreshShadowsForText(textHandle, options = {}) {
+        this._createOrUpdateShadow(textHandle, options);
+    }
+
+
+    /** @internal */
+    _createOrUpdateShadow(textHandle, options) {
         if (!this._initialized) this.initialize();
-        if (options === false) return
+        if (options === false) {
+            this.removeShadows(textHandle._id);
+            return
+        }
 
         var opts = Object.assign({}, this.defaultOptions, options);
-        if (!opts.enabled) return
+        if (!opts.enabled) {
+            this.removeShadows(textHandle._id);
+            return
+        }
 
         var mesh = textHandle.mesh;
-        if (!mesh) return
+        if (!mesh) {
+            this.removeShadows(textHandle._id);
+            return
+        }
+
+        var metrics = this._measureTextMesh(mesh);
+        var existing = this._shadows.get(textHandle._id);
+        if (existing) {
+            existing.opts = opts;
+            existing.width = metrics.width;
+            existing.depth = metrics.depth;
+            existing.centerOffsetX = metrics.centerOffsetX;
+            existing.centerOffsetZ = metrics.centerOffsetZ;
+            existing.textHandle = textHandle;
+            return
+        }
 
         // Create shadow instance
         var shadow = this._sourceMesh.createInstance('text_shadow_' + textHandle._id);
@@ -14504,7 +14541,20 @@ class TextShadowManager {
             });
         }
 
-        // Measure text size and center offset once at creation
+        this._shadows.set(textHandle._id, {
+            textHandle,
+            shadow,
+            opts,
+            width: metrics.width,
+            depth: metrics.depth,
+            centerOffsetX: metrics.centerOffsetX,
+            centerOffsetZ: metrics.centerOffsetZ,
+        });
+    }
+
+
+    /** @internal */
+    _measureTextMesh(mesh) {
         var width = 1;
         var depth = 0.3;
         var centerOffsetX = 0;
@@ -14524,15 +14574,7 @@ class TextShadowManager {
             centerOffsetZ = bb.centerWorld.z - mesh.position.z;
         }
 
-        this._shadows.set(textHandle._id, {
-            textHandle,
-            shadow,
-            opts,
-            width,
-            depth,
-            centerOffsetX,
-            centerOffsetZ,
-        });
+        return { width, depth, centerOffsetX, centerOffsetZ }
     }
 
 
