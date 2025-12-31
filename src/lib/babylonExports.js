@@ -41,6 +41,9 @@ export { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
 // MeshBuilder namespace for legacy code
 export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 
+// Textures / dynamic textures
+export { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture';
+
 // Skeleton & Animation
 export { Skeleton } from '@babylonjs/core/Bones/skeleton';
 export { Animation } from '@babylonjs/core/Animations/animation';

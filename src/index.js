@@ -793,6 +793,10 @@ function checkWorldOffset(noa) {
     noa.rendering._rebaseOrigin(delta)
     noa.entities._rebaseOrigin(delta)
     noa._objectMesher._rebaseOrigin(delta)
+    // Notify text shadow manager if it exists
+    if (noa.text && noa.text._shadowManager) {
+        noa.text._shadowManager._rebaseOrigin(delta)
+    }
 }
 
 

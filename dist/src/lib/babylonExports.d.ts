@@ -17,6 +17,7 @@ export { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 export { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 export { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 export { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+export { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 export { Skeleton } from "@babylonjs/core/Bones/skeleton";
 export { Animation } from "@babylonjs/core/Animations/animation";
 export { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";

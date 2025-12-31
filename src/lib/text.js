@@ -1,5 +1,6 @@
 
 import * as vec3 from 'gl-vec3'
+import { TextShadowManager } from './textShadow.js'
 
 
 var defaults = {
@@ -68,6 +69,12 @@ export class Text {
         /** @internal - Next unique ID for text instances */
         this._nextId = 1
 
+        /** @internal - Shadow manager for text shadows */
+        this._shadowManager = new TextShadowManager(noa)
+
+        /** @internal - Render observer for shadow updates */
+        this._renderObserver = null
+
         /** Default options for text creation */
         this.defaultOptions = {
             font: opts.defaultFont,
@@ -84,6 +91,10 @@ export class Text {
             diffuseColor: null,  // null = use meshwriter default (#404040)
             ambientColor: null,  // null = use meshwriter default (#202020)
             specularColor: null, // null = use meshwriter default (#000000)
+            /** If true, text material is affected by scene fog (default: true) */
+            fogEnabled: true,
+            /** Shadow options - true = use manager defaults, object = override, false = disable */
+            shadow: true,
         }
 
         // Attempt lazy initialization when scene is ready
@@ -129,6 +140,16 @@ export class Text {
             this.ready = true
             this.initFailed = false
             console.log('[noa.text] Text subsystem initialized')
+
+            // Initialize shadow manager
+            this._shadowManager.initialize()
+
+            // Set up render observer for shadow updates
+            var scene = this.noa.rendering.getScene()
+            this._renderObserver = scene.onBeforeRenderObservable.add(() => {
+                this._shadowManager.updateShadows()
+            })
+
             this._flushReadyCallbacks()
         } catch (e) {
             console.warn('[noa.text] MeshWriter not available, text features disabled:', e.message)
@@ -236,6 +257,7 @@ export class Text {
             'alpha': opts.alpha,
             'anchor': opts.anchor,
             'emissive-only': opts.emissiveOnly,
+            'fog-enabled': opts.fogEnabled,
             'colors': Object.keys(colors).length > 0 ? colors : undefined,
             'position': { x: 0, y: 0, z: 0 }
         })
@@ -260,6 +282,15 @@ export class Text {
         var id = this._nextId++
         var handle = new TextHandle(this, id, textInstance, mesh, content, opts)
         this._activeTexts.set(id, handle)
+
+        // Create shadows if enabled
+        var shadowOptions = opts.shadow
+        if (shadowOptions !== false) {
+            var resolvedShadowOpts = (shadowOptions === true || shadowOptions === undefined)
+                ? undefined
+                : shadowOptions
+            this._shadowManager.createShadowsForText(handle, resolvedShadowOpts)
+        }
 
         return handle
     }
@@ -342,16 +373,36 @@ export class Text {
     }
 
 
+    /**
+     * Get the shadow manager for configuring shadow defaults.
+     * Useful for dev panel integration.
+     * @returns {TextShadowManager}
+     */
+    getShadowManager() {
+        return this._shadowManager
+    }
+
+
     /** Dispose all text and cleanup */
     dispose() {
         if (this._disposed) return
         this._disposed = true
+
+        // Remove render observer
+        if (this._renderObserver) {
+            var scene = this.noa.rendering.getScene()
+            scene.onBeforeRenderObservable.remove(this._renderObserver)
+            this._renderObserver = null
+        }
 
         // Dispose all active texts
         for (var handle of this._activeTexts.values()) {
             handle.dispose()
         }
         this._activeTexts.clear()
+
+        // Dispose shadow manager
+        this._shadowManager.dispose()
 
         this._Writer = null
         this._registerFont = null
@@ -458,6 +509,9 @@ class TextHandle {
                 }
             }
         }
+        // Remove shadows
+        this._textSystem._shadowManager.removeShadows(this._id)
+
         this._textSystem._removeText(this._id)
 
         this._textInstance = null
@@ -479,4 +533,10 @@ class TextHandle {
  * @property {string} [diffuseColor] - Hex color for diffuse/lit surfaces (default: '#404040')
  * @property {string} [ambientColor] - Hex color for ambient/shadow areas (default: '#202020')
  * @property {string} [specularColor] - Hex color for specular highlights (default: '#000000')
+ * @property {boolean} [fogEnabled] - If true, text is affected by scene fog (default: true)
+ * @property {object|boolean} [shadow] - Shadow options, true for defaults, or false to disable shadows
+ * @property {boolean} [shadow.enabled] - Enable shadows (default: true)
+ * @property {number} [shadow.blur] - Shadow blur/softness 0-1 (default: 0.5)
+ * @property {boolean} [shadow.merged] - Use single merged shadow vs per-letter (default: true)
+ * @property {number} [shadow.opacity] - Shadow opacity 0-1 (default: 0.4)
  */

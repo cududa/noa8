@@ -9,8 +9,8 @@ export class TerrainMesher {
      * @param {import('../index').Engine} noa
     */
     constructor(noa: import("../index").Engine);
-    allTerrainMaterials: import("@babylonjs/core/Materials/standardMaterial.js").StandardMaterial[];
-    _defaultMaterial: import("@babylonjs/core/Materials/standardMaterial.js").StandardMaterial;
+    allTerrainMaterials: import("@babylonjs/core/Materials/standardMaterial").StandardMaterial[];
+    _defaultMaterial: import("@babylonjs/core/Materials/standardMaterial").StandardMaterial;
     initChunk: (chunk: any) => void;
     disposeChunk: (chunk: any) => void;
     /**

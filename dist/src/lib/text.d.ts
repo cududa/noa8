@@ -45,6 +45,10 @@ export class Text {
     _activeTexts: Map<any, any>;
     /** @internal - Next unique ID for text instances */
     _nextId: number;
+    /** @internal - Shadow manager for text shadows */
+    _shadowManager: TextShadowManager;
+    /** @internal - Render observer for shadow updates */
+    _renderObserver: import("@babylonjs/core").Observer<import("@babylonjs/core").Scene>;
     /** Default options for text creation */
     defaultOptions: {
         font: any;
@@ -61,6 +65,10 @@ export class Text {
         diffuseColor: any;
         ambientColor: any;
         specularColor: any;
+        /** If true, text material is affected by scene fog (default: true) */
+        fogEnabled: boolean;
+        /** Shadow options - true = use manager defaults, object = override, false = disable */
+        shadow: boolean;
     };
     /** @internal */
     _initWhenReady(): void;
@@ -141,6 +149,12 @@ export class Text {
     updateText(handle: TextHandle, newContent: string): TextHandle | null;
     /** @internal */
     _removeText(id: any): void;
+    /**
+     * Get the shadow manager for configuring shadow defaults.
+     * Useful for dev panel integration.
+     * @returns {TextShadowManager}
+     */
+    getShadowManager(): TextShadowManager;
     /** Dispose all text and cleanup */
     dispose(): void;
 }
@@ -189,7 +203,32 @@ export type TextOptions = {
      * - Hex color for specular highlights (default: '#000000')
      */
     specularColor?: string;
+    /**
+     * - If true, text is affected by scene fog (default: true)
+     */
+    fogEnabled?: boolean;
+    /**
+     * - Shadow options, true for defaults, or false to disable shadows
+     */
+    shadow?: object | boolean;
+    /**
+     * - Enable shadows (default: true)
+     */
+    enabled?: boolean;
+    /**
+     * - Shadow blur/softness 0-1 (default: 0.5)
+     */
+    blur?: number;
+    /**
+     * - Use single merged shadow vs per-letter (default: true)
+     */
+    merged?: boolean;
+    /**
+     * - Shadow opacity 0-1 (default: 0.4)
+     */
+    opacity?: number;
 };
+import { TextShadowManager } from './textShadow.js';
 /**
  * Handle for managing a text instance.
  * Provides methods to modify and dispose the text.
