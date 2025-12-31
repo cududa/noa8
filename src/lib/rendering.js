@@ -604,7 +604,7 @@ Rendering.prototype.setMeshVisibility = function (mesh, visible = false) {
 
 
 /**
- * Create a default standardMaterial:      
+ * Create a default standardMaterial:
  * flat, nonspecular, fully reflects diffuse and ambient light
  * @returns {StandardMaterial}
  */
@@ -614,6 +614,163 @@ Rendering.prototype.makeStandardMaterial = function (name) {
     mat.ambientColor.copyFromFloats(1, 1, 1)
     mat.diffuseColor.copyFromFloats(1, 1, 1)
     return mat
+}
+
+
+/*
+ *
+ *   COORDINATE CONVERSION UTILITIES
+ *
+ *   noa uses a "rebasing" system to prevent floating-point precision issues.
+ *   When the player moves far from (0,0,0), noa shifts everything to keep
+ *   the player near the origin in "local" coordinates.
+ *
+ *   - WORLD coordinates: Absolute positions in the game world
+ *   - LOCAL coordinates: Positions relative to the current origin offset (what Babylon.js renders)
+ *
+ *   Relationship: local = world - worldOriginOffset
+ *                 world = local + worldOriginOffset
+ *
+ */
+
+
+/**
+ * Convert world coordinates to local (rendering) coordinates.
+ * Use this when setting mesh.position for meshes registered with noa.
+ * @param {number} x - World X coordinate
+ * @param {number} y - World Y coordinate
+ * @param {number} z - World Z coordinate
+ * @returns {number[]} [localX, localY, localZ]
+ */
+Rendering.prototype.worldToLocal = function (x, y, z) {
+    var off = this.noa.worldOriginOffset
+    return [x - off[0], y - off[1], z - off[2]]
+}
+
+/**
+ * Convert world to local coordinates (cached version for hot paths).
+ * Use this in per-frame updates to avoid GC pressure.
+ * WARNING: Returns shared internal array - do not store the result!
+ * @param {number} x - World X coordinate
+ * @param {number} y - World Y coordinate
+ * @param {number} z - World Z coordinate
+ * @param {number[]} [out] - Optional output array to use instead of cache
+ * @returns {number[]} [localX, localY, localZ]
+ */
+Rendering.prototype.worldToLocalCached = function (x, y, z, out) {
+    var off = this.noa.worldOriginOffset
+    out = out || _cachedLocalCoords
+    out[0] = x - off[0]
+    out[1] = y - off[1]
+    out[2] = z - off[2]
+    return out
+}
+
+/**
+ * Convert local (rendering) coordinates to world coordinates.
+ * Use this when you need the "real" world position of a mesh.
+ * @param {number} x - Local X coordinate
+ * @param {number} y - Local Y coordinate
+ * @param {number} z - Local Z coordinate
+ * @returns {number[]} [worldX, worldY, worldZ]
+ */
+Rendering.prototype.localToWorld = function (x, y, z) {
+    var off = this.noa.worldOriginOffset
+    return [x + off[0], y + off[1], z + off[2]]
+}
+
+/**
+ * Convert local to world coordinates (cached version for hot paths).
+ * Use this in per-frame updates to avoid GC pressure.
+ * WARNING: Returns shared internal array - do not store the result!
+ * @param {number} x - Local X coordinate
+ * @param {number} y - Local Y coordinate
+ * @param {number} z - Local Z coordinate
+ * @param {number[]} [out] - Optional output array to use instead of cache
+ * @returns {number[]} [worldX, worldY, worldZ]
+ */
+Rendering.prototype.localToWorldCached = function (x, y, z, out) {
+    var off = this.noa.worldOriginOffset
+    out = out || _cachedWorldCoords
+    out[0] = x + off[0]
+    out[1] = y + off[1]
+    out[2] = z + off[2]
+    return out
+}
+
+/**
+ * Set a mesh's position using world coordinates.
+ * Automatically converts to local coords for proper noa integration.
+ * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to position
+ * @param {number} x - World X coordinate
+ * @param {number} y - World Y coordinate
+ * @param {number} z - World Z coordinate
+ */
+Rendering.prototype.setMeshWorldPosition = function (mesh, x, y, z) {
+    var local = this.worldToLocalCached(x, y, z)
+    mesh.position.set(local[0], local[1], local[2])
+}
+
+/**
+ * Get a mesh's world position (converts from local coords).
+ * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to query
+ * @returns {number[]} [worldX, worldY, worldZ]
+ */
+Rendering.prototype.getMeshWorldPosition = function (mesh) {
+    var pos = mesh.position
+    return this.localToWorld(pos.x, pos.y, pos.z)
+}
+
+/**
+ * Get a mesh's world position (cached version for hot paths).
+ * WARNING: Returns shared internal array - do not store the result!
+ * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to query
+ * @param {number[]} [out] - Optional output array to use instead of cache
+ * @returns {number[]} [worldX, worldY, worldZ]
+ */
+Rendering.prototype.getMeshWorldPositionCached = function (mesh, out) {
+    var pos = mesh.position
+    return this.localToWorldCached(pos.x, pos.y, pos.z, out || _cachedMeshWorldPos)
+}
+
+/**
+ * Get a copy of the current world origin offset.
+ * @returns {number[]} [offsetX, offsetY, offsetZ]
+ */
+Rendering.prototype.getWorldOriginOffset = function () {
+    var off = this.noa.worldOriginOffset
+    return [off[0], off[1], off[2]]
+}
+
+/**
+ * Get the current world origin offset (cached version for hot paths).
+ * WARNING: Returns shared internal array - do not store the result!
+ * @param {number[]} [out] - Optional output array to use instead of cache
+ * @returns {number[]} [offsetX, offsetY, offsetZ]
+ */
+Rendering.prototype.getWorldOriginOffsetCached = function (out) {
+    var off = this.noa.worldOriginOffset
+    out = out || _cachedOriginOffset
+    out[0] = off[0]
+    out[1] = off[1]
+    out[2] = off[2]
+    return out
+}
+
+/**
+ * Update a shader material's world origin offset uniform.
+ * Call this each frame for shaders that need world coordinates.
+ *
+ * In your shader, recover world coords like:
+ *   float worldX = localPos.x + worldOriginOffset.x;
+ *
+ * @param {import('@babylonjs/core').ShaderMaterial} material - The shader material to update
+ * @param {string} [uniformName='worldOriginOffset'] - The uniform name in the shader
+ */
+Rendering.prototype.updateShaderWorldOrigin = function (material, uniformName) {
+    var off = this.noa.worldOriginOffset
+    _shaderOffsetVec.set(off[0], off[1], off[2])
+    material.setVector3(uniformName || 'worldOriginOffset', _shaderOffsetVec)
 }
 
 
@@ -656,6 +813,13 @@ Rendering.prototype.disposeChunkForRendering = function (chunk) {
 
 // Cached Vector3 for origin rebasing to avoid per-rebase allocation
 var _rebaseVec = new Vector3(0, 0, 0)
+
+// Cached arrays for coordinate conversion hot paths
+var _cachedLocalCoords = [0, 0, 0]
+var _cachedWorldCoords = [0, 0, 0]
+var _cachedMeshWorldPos = [0, 0, 0]
+var _cachedOriginOffset = [0, 0, 0]
+var _shaderOffsetVec = new Vector3(0, 0, 0)
 
 // change world origin offset, and rebase everything with a position
 /** @internal */

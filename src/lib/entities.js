@@ -25,6 +25,10 @@ var defaultOptions = {
     shadowDistance: 10,
 }
 
+// Cached arrays for entity world position hot paths
+var _cachedEntityWorldPos = [0, 0, 0]
+var _boundsCheckPos = [0, 0, 0]  // Separate cache for isInWorldBounds to avoid corruption
+
 
 /**
  * `noa.entities` - manages entities and components.
@@ -173,6 +177,69 @@ export class Entities extends ECS {
             var body = this.getPhysicsBody(id)
             if (!body || !body.aabb) return null
             return body.aabb
+        }
+
+        /**
+         * Returns the entity's position in world coordinates.
+         * Returns center X/Z and base Y of the entity's AABB.
+         *
+         * @example
+         * const [worldX, worldY, worldZ] = noa.entities.getWorldPosition(playerId)
+         *
+         * @type {(id:number) => number[] | null}
+         */
+        this.getWorldPosition = (id) => {
+            var aabb = this.getAABB(id)
+            if (!aabb) return null
+            var off = this.noa.worldOriginOffset
+            return [
+                (aabb.base[0] + aabb.max[0]) / 2 + off[0],
+                aabb.base[1] + off[1],
+                (aabb.base[2] + aabb.max[2]) / 2 + off[2]
+            ]
+        }
+
+        /**
+         * Returns the entity's world position (cached version for hot paths).
+         * Use this in per-frame updates to avoid GC pressure.
+         * WARNING: Returns shared internal array - do not store the result!
+         *
+         * @type {(id:number, out?: number[]) => number[] | null}
+         */
+        this.getWorldPositionCached = (id, out) => {
+            var aabb = this.getAABB(id)
+            if (!aabb) return null
+            var off = this.noa.worldOriginOffset
+            out = out || _cachedEntityWorldPos
+            out[0] = (aabb.base[0] + aabb.max[0]) / 2 + off[0]
+            out[1] = aabb.base[1] + off[1]
+            out[2] = (aabb.base[2] + aabb.max[2]) / 2 + off[2]
+            return out
+        }
+
+        /**
+         * Check if an entity is within world-coordinate bounds.
+         *
+         * @example
+         * const inRiver = noa.entities.isInWorldBounds(playerId, {
+         *     xMin: -5, xMax: 5,
+         *     yMin: 0, yMax: 3,
+         *     zMin: -50, zMax: 50
+         * })
+         *
+         * @type {(id:number, bounds: {xMin?:number, xMax?:number, yMin?:number, yMax?:number, zMin?:number, zMax?:number}) => boolean}
+         */
+        this.isInWorldBounds = (id, bounds) => {
+            // Uses separate cache to avoid corrupting user's getWorldPositionCached() result
+            var pos = this.getWorldPositionCached(id, _boundsCheckPos)
+            if (!pos) return false
+            if (bounds.xMin !== undefined && pos[0] < bounds.xMin) return false
+            if (bounds.xMax !== undefined && pos[0] > bounds.xMax) return false
+            if (bounds.yMin !== undefined && pos[1] < bounds.yMin) return false
+            if (bounds.yMax !== undefined && pos[1] > bounds.yMax) return false
+            if (bounds.zMin !== undefined && pos[2] < bounds.zMin) return false
+            if (bounds.zMax !== undefined && pos[2] > bounds.zMax) return false
+            return true
         }
 
         /**

@@ -153,6 +153,92 @@ export class Rendering {
      * @returns {StandardMaterial}
      */
     makeStandardMaterial(name: any): StandardMaterial;
+    /**
+     * Convert world coordinates to local (rendering) coordinates.
+     * Use this when setting mesh.position for meshes registered with noa.
+     * @param {number} x - World X coordinate
+     * @param {number} y - World Y coordinate
+     * @param {number} z - World Z coordinate
+     * @returns {number[]} [localX, localY, localZ]
+     */
+    worldToLocal(x: number, y: number, z: number): number[];
+    /**
+     * Convert world to local coordinates (cached version for hot paths).
+     * Use this in per-frame updates to avoid GC pressure.
+     * WARNING: Returns shared internal array - do not store the result!
+     * @param {number} x - World X coordinate
+     * @param {number} y - World Y coordinate
+     * @param {number} z - World Z coordinate
+     * @param {number[]} [out] - Optional output array to use instead of cache
+     * @returns {number[]} [localX, localY, localZ]
+     */
+    worldToLocalCached(x: number, y: number, z: number, out?: number[]): number[];
+    /**
+     * Convert local (rendering) coordinates to world coordinates.
+     * Use this when you need the "real" world position of a mesh.
+     * @param {number} x - Local X coordinate
+     * @param {number} y - Local Y coordinate
+     * @param {number} z - Local Z coordinate
+     * @returns {number[]} [worldX, worldY, worldZ]
+     */
+    localToWorld(x: number, y: number, z: number): number[];
+    /**
+     * Convert local to world coordinates (cached version for hot paths).
+     * Use this in per-frame updates to avoid GC pressure.
+     * WARNING: Returns shared internal array - do not store the result!
+     * @param {number} x - Local X coordinate
+     * @param {number} y - Local Y coordinate
+     * @param {number} z - Local Z coordinate
+     * @param {number[]} [out] - Optional output array to use instead of cache
+     * @returns {number[]} [worldX, worldY, worldZ]
+     */
+    localToWorldCached(x: number, y: number, z: number, out?: number[]): number[];
+    /**
+     * Set a mesh's position using world coordinates.
+     * Automatically converts to local coords for proper noa integration.
+     * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to position
+     * @param {number} x - World X coordinate
+     * @param {number} y - World Y coordinate
+     * @param {number} z - World Z coordinate
+     */
+    setMeshWorldPosition(mesh: import("@babylonjs/core").Mesh | import("@babylonjs/core").TransformNode, x: number, y: number, z: number): void;
+    /**
+     * Get a mesh's world position (converts from local coords).
+     * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to query
+     * @returns {number[]} [worldX, worldY, worldZ]
+     */
+    getMeshWorldPosition(mesh: import("@babylonjs/core").Mesh | import("@babylonjs/core").TransformNode): number[];
+    /**
+     * Get a mesh's world position (cached version for hot paths).
+     * WARNING: Returns shared internal array - do not store the result!
+     * @param {import('@babylonjs/core').Mesh|import('@babylonjs/core').TransformNode} mesh - The mesh to query
+     * @param {number[]} [out] - Optional output array to use instead of cache
+     * @returns {number[]} [worldX, worldY, worldZ]
+     */
+    getMeshWorldPositionCached(mesh: import("@babylonjs/core").Mesh | import("@babylonjs/core").TransformNode, out?: number[]): number[];
+    /**
+     * Get a copy of the current world origin offset.
+     * @returns {number[]} [offsetX, offsetY, offsetZ]
+     */
+    getWorldOriginOffset(): number[];
+    /**
+     * Get the current world origin offset (cached version for hot paths).
+     * WARNING: Returns shared internal array - do not store the result!
+     * @param {number[]} [out] - Optional output array to use instead of cache
+     * @returns {number[]} [offsetX, offsetY, offsetZ]
+     */
+    getWorldOriginOffsetCached(out?: number[]): number[];
+    /**
+     * Update a shader material's world origin offset uniform.
+     * Call this each frame for shaders that need world coordinates.
+     *
+     * In your shader, recover world coords like:
+     *   float worldX = localPos.x + worldOriginOffset.x;
+     *
+     * @param {import('@babylonjs/core').ShaderMaterial} material - The shader material to update
+     * @param {string} [uniformName='worldOriginOffset'] - The uniform name in the shader
+     */
+    updateShaderWorldOrigin(material: import("@babylonjs/core").ShaderMaterial, uniformName?: string): void;
     /** @internal */
     prepareChunkForRendering(chunk: any): void;
     /** @internal */

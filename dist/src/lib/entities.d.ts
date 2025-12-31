@@ -81,6 +81,44 @@ export class Entities extends ECS {
         max: number[];
     };
     /**
+     * Returns the entity's position in world coordinates.
+     * Returns center X/Z and base Y of the entity's AABB.
+     *
+     * @example
+     * const [worldX, worldY, worldZ] = noa.entities.getWorldPosition(playerId)
+     *
+     * @type {(id:number) => number[] | null}
+     */
+    getWorldPosition: (id: number) => number[] | null;
+    /**
+     * Returns the entity's world position (cached version for hot paths).
+     * Use this in per-frame updates to avoid GC pressure.
+     * WARNING: Returns shared internal array - do not store the result!
+     *
+     * @type {(id:number, out?: number[]) => number[] | null}
+     */
+    getWorldPositionCached: (id: number, out?: number[]) => number[] | null;
+    /**
+     * Check if an entity is within world-coordinate bounds.
+     *
+     * @example
+     * const inRiver = noa.entities.isInWorldBounds(playerId, {
+     *     xMin: -5, xMax: 5,
+     *     yMin: 0, yMax: 3,
+     *     zMin: -50, zMax: 50
+     * })
+     *
+     * @type {(id:number, bounds: {xMin?:number, xMax?:number, yMin?:number, yMax?:number, zMin?:number, zMax?:number}) => boolean}
+     */
+    isInWorldBounds: (id: number, bounds: {
+        xMin?: number;
+        xMax?: number;
+        yMin?: number;
+        yMax?: number;
+        zMin?: number;
+        zMax?: number;
+    }) => boolean;
+    /**
      * Returns whether the entity has a mesh
      * @type {(id:number) => boolean}
     */
