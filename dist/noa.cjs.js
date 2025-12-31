@@ -7750,6 +7750,32 @@ class Entities extends ECS {
     }
 
 
+    /**
+     * Query entities by component name.
+     * Returns an iterable query object for efficient iteration.
+     *
+     * @example
+     * // Iterate over all entities with physics
+     * for (const { id, state } of noa.entities.query('physics')) {
+     *   console.log(id, state.body)
+     * }
+     *
+     * // With forEach
+     * noa.entities.query('physics').forEach(({ id, state }) => {
+     *   console.log(id, state)
+     * })
+     *
+     * // Chain multiple components
+     * noa.entities.query('physics').withComponent('mesh').forEach(...)
+     *
+     * @param {string} componentName
+     * @returns {EntityQueryImpl}
+     */
+    query(componentName) {
+        return new EntityQueryImpl(this, componentName)
+    }
+
+
 
 
     /*
@@ -8028,13 +8054,84 @@ class Entities extends ECS {
 
 
 /*
- * 
- * 
- * 
+ *
+ *
+ *
+ *          ENTITY QUERY IMPLEMENTATION
+ *
+ *
+ *
+*/
+
+/**
+ * Query object for iterating over entities with specific components.
+ * Supports iterator protocol, forEach, and component chaining.
+ */
+class EntityQueryImpl {
+    constructor(ecs, name) {
+        this._ecs = ecs;
+        this._names = [name];
+    }
+
+    *[Symbol.iterator]() {
+        const states = this._ecs.getStatesList(this._names[0]);
+        for (const state of states) {
+            if (!state) continue
+            const id = state.__id;
+            if (this._names.length === 1) {
+                yield { id, state };
+            } else {
+                let merged = { ...state };
+                let valid = true;
+                for (let i = 1; i < this._names.length; i++) {
+                    const other = this._ecs.getState(id, this._names[i]);
+                    if (!other) { valid = false; break }
+                    merged = { ...merged, ...other };
+                }
+                if (valid) yield { id, state: merged };
+            }
+        }
+    }
+
+    /**
+     * Chain another component requirement to the query.
+     * @param {string} name Component name
+     * @returns {EntityQueryImpl}
+     */
+    withComponent(name) {
+        const q = new EntityQueryImpl(this._ecs, this._names[0]);
+        q._names = [...this._names, name];
+        return q
+    }
+
+    /**
+     * Iterate with a callback function.
+     * @param {function({id:number, state:object}):void} cb
+     */
+    forEach(cb) { for (const r of this) cb(r); }
+
+    /**
+     * Get array of entity IDs matching the query.
+     * @returns {number[]}
+     */
+    getIds() { return Array.from(this).map(r => r.id) }
+
+    /**
+     * Count entities matching the query.
+     * @returns {number}
+     */
+    count() { let c = 0; for (const _ of this) c++; return c }
+}
+
+
+/*
+ *
+ *
+ *
  *          HELPERS
- * 
- * 
- * 
+ *
+ *
+ *
 */
 
 // safety helper - when rebasing, nudge extent away from 

@@ -128,6 +128,28 @@ export class Entities extends ECS {
      * @type {(id1:number, id2:number) => void}
      */
     onPairwiseEntityCollision: (id1: number, id2: number) => void;
+    /**
+     * Query entities by component name.
+     * Returns an iterable query object for efficient iteration.
+     *
+     * @example
+     * // Iterate over all entities with physics
+     * for (const { id, state } of noa.entities.query('physics')) {
+     *   console.log(id, state.body)
+     * }
+     *
+     * // With forEach
+     * noa.entities.query('physics').forEach(({ id, state }) => {
+     *   console.log(id, state)
+     * })
+     *
+     * // Chain multiple components
+     * noa.entities.query('physics').withComponent('mesh').forEach(...)
+     *
+     * @param {string} componentName
+     * @returns {EntityQueryImpl}
+     */
+    query(componentName: string): EntityQueryImpl;
     /** Set an entity's position, and update all derived state.
      *
      * In general, always use this to set an entity's position unless
@@ -182,3 +204,41 @@ export class Entities extends ECS {
     dispose(): void;
 }
 import ECS from 'ent-comp';
+/**
+ * Query object for iterating over entities with specific components.
+ * Supports iterator protocol, forEach, and component chaining.
+ */
+declare class EntityQueryImpl {
+    constructor(ecs: any, name: any);
+    _ecs: any;
+    _names: any[];
+    /**
+     * Chain another component requirement to the query.
+     * @param {string} name Component name
+     * @returns {EntityQueryImpl}
+     */
+    withComponent(name: string): EntityQueryImpl;
+    /**
+     * Iterate with a callback function.
+     * @param {function({id:number, state:object}):void} cb
+     */
+    forEach(cb: (arg0: {
+        id: number;
+        state: object;
+    }) => void): void;
+    /**
+     * Get array of entity IDs matching the query.
+     * @returns {number[]}
+     */
+    getIds(): number[];
+    /**
+     * Count entities matching the query.
+     * @returns {number}
+     */
+    count(): number;
+    [Symbol.iterator](): Generator<{
+        id: any;
+        state: any;
+    }, void, unknown>;
+}
+export {};
