@@ -14743,8 +14743,6 @@ class TextHandle {
                 } catch (err) {
                     disposed = false;
                 }
-            } else if (typeof this.mesh._isDisposed === 'boolean') {
-                disposed = this.mesh._isDisposed;
             }
             if (!disposed && typeof this.mesh.dispose === 'function') {
                 try {
