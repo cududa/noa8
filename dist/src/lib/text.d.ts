@@ -55,6 +55,12 @@ export class Text {
         alpha: number;
         /** @type {'left' | 'center' | 'right'} */
         anchor: "left" | "center" | "right";
+        /** If true, disables lighting (only emissive color shows) */
+        emissiveOnly: boolean;
+        /** Material colors - diffuse affects lit surfaces, ambient affects shadowed areas */
+        diffuseColor: any;
+        ambientColor: any;
+        specularColor: any;
     };
     /** @internal */
     _initWhenReady(): void;
@@ -156,7 +162,7 @@ export type TextOptions = {
      */
     letterThickness?: number;
     /**
-     * - Hex color string (default: '#FFFFFF')
+     * - Hex color string for emissive (default: '#FFFFFF')
      */
     color?: string;
     /**
@@ -167,6 +173,22 @@ export type TextOptions = {
      * - 'left', 'center', or 'right' (default: 'center')
      */
     anchor?: string;
+    /**
+     * - If true, disables lighting (only emissive color shows)
+     */
+    emissiveOnly?: boolean;
+    /**
+     * - Hex color for diffuse/lit surfaces (default: '#404040')
+     */
+    diffuseColor?: string;
+    /**
+     * - Hex color for ambient/shadow areas (default: '#202020')
+     */
+    ambientColor?: string;
+    /**
+     * - Hex color for specular highlights (default: '#000000')
+     */
+    specularColor?: string;
 };
 /**
  * Handle for managing a text instance.

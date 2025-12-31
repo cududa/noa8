@@ -14386,6 +14386,12 @@ class Text {
             alpha: 1,
             /** @type {'left' | 'center' | 'right'} */
             anchor: /** @type {'center'} */ ('center'),
+            /** If true, disables lighting (only emissive color shows) */
+            emissiveOnly: false,
+            /** Material colors - diffuse affects lit surfaces, ambient affects shadowed areas */
+            diffuseColor: null,  // null = use meshwriter default (#404040)
+            ambientColor: null,  // null = use meshwriter default (#202020)
+            specularColor: null, // null = use meshwriter default (#000000)
         };
 
         // Attempt lazy initialization when scene is ready
@@ -14523,6 +14529,12 @@ class Text {
         var opts = Object.assign({}, this.defaultOptions, options);
         var position = opts.position || [0, 0, 0];
 
+        // Build colors object for meshwriter (only include non-null values)
+        var colors = {};
+        if (opts.diffuseColor) colors.diffuse = opts.diffuseColor;
+        if (opts.ambientColor) colors.ambient = opts.ambientColor;
+        if (opts.specularColor) colors.specular = opts.specularColor;
+
         // Create meshwriter text instance
         var textInstance = new this._Writer(content, {
             'font-family': opts.font,
@@ -14531,6 +14543,8 @@ class Text {
             'color': opts.color,
             'alpha': opts.alpha,
             'anchor': opts.anchor,
+            'emissive-only': opts.emissiveOnly,
+            'colors': Object.keys(colors).length > 0 ? colors : undefined,
             'position': { x: 0, y: 0, z: 0 }
         });
 
@@ -14766,9 +14780,13 @@ class TextHandle {
  * @property {string} [font] - Font family name (default: 'Helvetica')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
- * @property {string} [color] - Hex color string (default: '#FFFFFF')
+ * @property {string} [color] - Hex color string for emissive (default: '#FFFFFF')
  * @property {number} [alpha] - Transparency 0-1 (default: 1)
  * @property {string} [anchor] - 'left', 'center', or 'right' (default: 'center')
+ * @property {boolean} [emissiveOnly] - If true, disables lighting (only emissive color shows)
+ * @property {string} [diffuseColor] - Hex color for diffuse/lit surfaces (default: '#404040')
+ * @property {string} [ambientColor] - Hex color for ambient/shadow areas (default: '#202020')
+ * @property {string} [specularColor] - Hex color for specular highlights (default: '#000000')
  */
 
 /**
