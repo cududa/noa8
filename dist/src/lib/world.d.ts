@@ -22,6 +22,8 @@
  *    Fires after a new chunk object is added to the world
  *  + `chunkBeingRemoved = (requestID, dataArr, userData)`
  *    Fires before a chunk is removed from world
+ *  + `initialLoadComplete => ()`
+ *    Fires once when all initially requested chunks are loaded and meshed
 */
 export class World extends EventEmitter {
     /** @internal */
@@ -30,6 +32,12 @@ export class World extends EventEmitter {
     noa: any;
     /** @internal */
     playerChunkLoaded: boolean;
+    /**
+     * Whether the initial chunk load has completed.
+     * Becomes true when all initially requested chunks are loaded and meshed.
+     * @type {boolean}
+     */
+    _initialLoadComplete: boolean;
     /** @internal */
     Chunk: typeof Chunk;
     /**
@@ -277,6 +285,13 @@ export class World extends EventEmitter {
      * @param {number} z
      */
     manuallyUnloadChunk(x?: number, y?: number, z?: number): void;
+    /**
+     * Returns whether the initial chunk load has completed.
+     * This becomes true when all initially requested chunks are loaded and meshed
+     * (when both pending and mesh queues are empty for the first time).
+     * @returns {boolean}
+     */
+    isInitialLoadComplete(): boolean;
     /** @internal */
     tick(): void;
     /** @internal */

@@ -21,7 +21,7 @@ var defaultOptions = {
 
 /**
  * `noa.world` - manages world data, chunks, voxels.
- * 
+ *
  * This module uses the following default options (from the options
  * object passed to the {@link Engine}):
  * ```js
@@ -33,16 +33,18 @@ var defaultOptions = {
  *   manuallyControlChunkLoading: false,
  * }
  * ```
- * 
+ *
  * **Events:**
- *  + `worldDataNeeded = (requestID, dataArr, x, y, z, worldName)`  
+ *  + `worldDataNeeded = (requestID, dataArr, x, y, z, worldName)`
  *    Alerts client that a new chunk of world data is needed.
- *  + `playerEnteredChunk => (i, j, k)`    
+ *  + `playerEnteredChunk => (i, j, k)`
  *    Fires when player enters a new chunk
- *  + `chunkAdded => (chunk)`  
+ *  + `chunkAdded => (chunk)`
  *    Fires after a new chunk object is added to the world
- *  + `chunkBeingRemoved = (requestID, dataArr, userData)`  
+ *  + `chunkBeingRemoved = (requestID, dataArr, userData)`
  *    Fires before a chunk is removed from world
+ *  + `initialLoadComplete => ()`
+ *    Fires once when all initially requested chunks are loaded and meshed
 */
 export class World extends EventEmitter {
 
@@ -55,6 +57,13 @@ export class World extends EventEmitter {
 
         /** @internal */
         this.playerChunkLoaded = false
+
+        /**
+         * Whether the initial chunk load has completed.
+         * Becomes true when all initially requested chunks are loaded and meshed.
+         * @type {boolean}
+         */
+        this._initialLoadComplete = false
 
         /** @internal */
         this.Chunk = Chunk // expose this class for ...reasons
@@ -534,6 +543,17 @@ World.prototype.manuallyUnloadChunk = function (x = 0, y = 0, z = 0) {
 var manualErr = 'Set `noa.world.manuallyControlChunkLoading` if you need this API'
 
 
+/**
+ * Returns whether the initial chunk load has completed.
+ * This becomes true when all initially requested chunks are loaded and meshed
+ * (when both pending and mesh queues are empty for the first time).
+ * @returns {boolean}
+ */
+World.prototype.isInitialLoadComplete = function () {
+    return this._initialLoadComplete
+}
+
+
 
 
 /*
@@ -615,6 +635,19 @@ World.prototype.tick = function () {
     var pChunk = this._storage.getChunkByIndexes(ci, cj, ck)
     this.playerChunkLoaded = !!pChunk
 
+    // check for initial load completion (all queues empty for first time)
+    if (!this._initialLoadComplete) {
+        var pendingEmpty = this._chunksPending.isEmpty()
+        var toMeshEmpty = this._chunksToMesh.isEmpty()
+        var toMeshFirstEmpty = this._chunksToMeshFirst.isEmpty()
+        var hasLoadedChunks = !this._chunksKnown.isEmpty()
+
+        if (pendingEmpty && toMeshEmpty && toMeshFirstEmpty && hasLoadedChunks) {
+            this._initialLoadComplete = true
+            this.emit('initialLoadComplete')
+        }
+    }
+
     profile_queues_hook('end', this)
     profile_hook('end')
 }
@@ -652,6 +685,9 @@ World.prototype.dispose = function () {
     this._chunksToMesh.empty()
     this._chunksToMeshFirst.empty()
     this._chunksSortedLocs.empty()
+
+    // Reset initial load state for potential reuse
+    this._initialLoadComplete = false
 
     // Dispose all chunks
     var hash = this._storage.hash

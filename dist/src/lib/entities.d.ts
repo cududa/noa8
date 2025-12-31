@@ -67,6 +67,20 @@ export class Entities extends ECS {
     */
     getPhysicsBody: (id: number) => null | import("voxel-physics-engine").RigidBody;
     /**
+     * Returns the entity's axis-aligned bounding box (AABB) in local coordinates.
+     * The AABB represents the entity's collision box position relative to the
+     * current world origin offset. To get world coordinates, add noa.worldOriginOffset.
+     *
+     * **Note:** Returns a direct reference to the physics body's internal AABB.
+     * Modifying the returned object will mutate the entity's physics state.
+     *
+     * @type {(id:number) => null | {base: number[], max: number[]}}
+    */
+    getAABB: (id: number) => null | {
+        base: number[];
+        max: number[];
+    };
+    /**
      * Returns whether the entity has a mesh
      * @type {(id:number) => boolean}
     */
