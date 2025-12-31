@@ -20,6 +20,7 @@ export { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 // Materials
 export { Material } from '@babylonjs/core/Materials/material';
 export { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+export { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial';
 export { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase';
 export { Texture } from '@babylonjs/core/Materials/Textures/texture';
 export { RawTexture2DArray } from '@babylonjs/core/Materials/Textures/rawTexture2DArray';
@@ -28,14 +29,29 @@ export { RawTexture2DArray } from '@babylonjs/core/Materials/Textures/rawTexture
 export { Mesh } from '@babylonjs/core/Meshes/mesh';
 export { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 export { TransformNode } from '@babylonjs/core/Meshes/transformNode';
+export { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
 
-// Mesh Builders
+// Mesh Builders (individual functions for tree-shaking)
 export { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
 export { CreateDisc } from '@babylonjs/core/Meshes/Builders/discBuilder';
 export { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder';
+export { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
+export { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
+export { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
+// MeshBuilder namespace for legacy code
+export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
+
+// Skeleton & Animation
+export { Skeleton } from '@babylonjs/core/Bones/skeleton';
+export { Animation } from '@babylonjs/core/Animations/animation';
+export { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
+
+// Loaders (SceneLoader)
+export { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 
 // Lights
 export { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
+export { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 
 // Culling & Octree
 export { Octree } from '@babylonjs/core/Culling/Octrees/octree';
@@ -47,4 +63,3 @@ export { Ray } from '@babylonjs/core/Culling/ray';
 
 // Side-effect imports for features that need registration
 import '@babylonjs/core/Meshes/thinInstanceMesh';
-import '@babylonjs/core/Meshes/instancedMesh';

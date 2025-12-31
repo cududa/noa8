@@ -1,24 +1,49 @@
 import { CreateDisc } from '@babylonjs/core/Meshes/Builders/discBuilder';
+export { CreateDisc } from '@babylonjs/core/Meshes/Builders/discBuilder';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
+export { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture';
+export { Texture } from '@babylonjs/core/Materials/Textures/texture';
 import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase';
 import { Engine as Engine$1 } from '@babylonjs/core/Engines/engine';
 import { RawTexture2DArray } from '@babylonjs/core/Materials/Textures/rawTexture2DArray';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
+export { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
+export { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
 import { OctreeSceneComponent } from '@babylonjs/core/Culling/Octrees/octreeSceneComponent';
 import { Octree } from '@babylonjs/core/Culling/Octrees/octree';
 import { Vector3, Quaternion } from '@babylonjs/core/Maths/math.vector';
+export { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { OctreeBlock } from '@babylonjs/core/Culling/Octrees/octreeBlock';
 import { Scene, ScenePerformancePriority } from '@babylonjs/core/scene';
+export { Scene } from '@babylonjs/core/scene';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera';
 import { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
+export { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
 import { Color4, Color3 } from '@babylonjs/core/Maths/math.color';
+export { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
+export { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { Ray } from '@babylonjs/core/Culling/ray';
 import { Material } from '@babylonjs/core/Materials/material';
+export { Material } from '@babylonjs/core/Materials/material';
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
+export { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
+export { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder';
+export { CreateLines } from '@babylonjs/core/Meshes/Builders/linesBuilder';
+export { InstancedMesh } from '@babylonjs/core/Meshes/instancedMesh';
+export { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
+export { CreateCylinder } from '@babylonjs/core/Meshes/Builders/cylinderBuilder';
+export { CreateSphere } from '@babylonjs/core/Meshes/Builders/sphereBuilder';
+export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
+export { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial';
+export { Skeleton } from '@babylonjs/core/Bones/skeleton';
+export { Animation } from '@babylonjs/core/Animations/animation';
+export { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
+export { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 
 function _mergeNamespaces(n, m) {
 	m.forEach(function (e) {
@@ -10948,10 +10973,35 @@ Rendering.prototype.includeMeshInMainLight = function (mesh, includeDescendants 
     });
 };
 
+/**
+ * Create a light in the scene.
+ * @param {'directional' | 'hemispheric'} type - The type of light to create
+ * @param {string} name - Name for the light
+ * @returns {DirectionalLight | HemisphericLight} The created light
+ */
+Rendering.prototype.createLight = function (type, name) {
+    var scene = this.getScene();
+    if (type === 'directional') {
+        return new DirectionalLight(name, new Vector3(0, -1, 0), scene)
+    } else if (type === 'hemispheric') {
+        return new HemisphericLight(name, new Vector3(0, 1, 0), scene)
+    }
+    throw new Error('Unknown light type: ' + type)
+};
+
 // per-tick listener for rendering-related stuff
 /** @internal */
 Rendering.prototype.tick = function (dt) {
-    // nothing here at the moment
+    // Clean up disposed meshes from the main light's excludedMeshes array
+    // This prevents memory leaks when meshes are disposed without explicit cleanup
+    if (this.light && this.light.excludedMeshes && this.light.excludedMeshes.length > 0) {
+        var validMeshes = this.light.excludedMeshes.filter(function (m) {
+            return m && !m.isDisposed()
+        });
+        if (validMeshes.length !== this.light.excludedMeshes.length) {
+            this.light.excludedMeshes = validMeshes;
+        }
+    }
 };
 
 

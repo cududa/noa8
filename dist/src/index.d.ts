@@ -272,3 +272,4 @@ import { TerrainMesher } from './lib/terrainMesher';
 import { ObjectMesher } from './lib/objectMesher';
 import * as vec3 from 'gl-vec3';
 import * as skeletonUtils from './lib/skeletonUtils';
+export { Vector3, Quaternion, Color3, Color4, Scene, Mesh, TransformNode, InstancedMesh, VertexData, CreateBox, CreateCylinder, CreateSphere, CreatePlane, CreateDisc, CreateLines, MeshBuilder, Material, StandardMaterial, ShaderMaterial, Texture, DirectionalLight, HemisphericLight, Skeleton, Animation, AnimationGroup, SceneLoader } from "./lib/babylonExports";

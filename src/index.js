@@ -8,6 +8,45 @@
 
 import './lib/shims'
 
+// Re-export Babylon.js types for consumers to avoid direct @babylonjs/core imports
+// This ensures a single Babylon.js instance and proper tree-shaking
+export {
+    // Math
+    Vector3,
+    Quaternion,
+    Color3,
+    Color4,
+    // Scene
+    Scene,
+    // Meshes
+    Mesh,
+    TransformNode,
+    InstancedMesh,
+    VertexData,
+    // Mesh Builders
+    CreateBox,
+    CreateCylinder,
+    CreateSphere,
+    CreatePlane,
+    CreateDisc,
+    CreateLines,
+    MeshBuilder,
+    // Materials
+    Material,
+    StandardMaterial,
+    ShaderMaterial,
+    Texture,
+    // Lights
+    DirectionalLight,
+    HemisphericLight,
+    // Animation
+    Skeleton,
+    Animation,
+    AnimationGroup,
+    // Loading
+    SceneLoader,
+} from './lib/babylonExports'
+
 import { EventEmitter } from 'events'
 import * as vec3 from 'gl-vec3'
 import ndarray from 'ndarray'

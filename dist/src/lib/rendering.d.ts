@@ -104,6 +104,13 @@ export class Rendering {
     setMainLightOptions(opts: any): void;
     excludeMeshFromMainLight(mesh: any, includeDescendants?: boolean): void;
     includeMeshInMainLight(mesh: any, includeDescendants?: boolean): void;
+    /**
+     * Create a light in the scene.
+     * @param {'directional' | 'hemispheric'} type - The type of light to create
+     * @param {string} name - Name for the light
+     * @returns {DirectionalLight | HemisphericLight} The created light
+     */
+    createLight(type: "directional" | "hemispheric", name: string): DirectionalLight | HemisphericLight;
     /** @internal */
     tick(dt: any): void;
     /** @internal */
@@ -259,3 +266,4 @@ import { TransformNode } from './babylonExports.js';
 import { StandardMaterial } from './babylonExports.js';
 import { Vector3 } from './babylonExports.js';
 import { Ray } from './babylonExports.js';
+import { HemisphericLight } from './babylonExports.js';

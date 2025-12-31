@@ -11,6 +11,7 @@ import {
     FreeCamera,
     Engine,
     DirectionalLight,
+    HemisphericLight,
     StandardMaterial,
     Color3,
     Color4,
@@ -334,10 +335,35 @@ Rendering.prototype.includeMeshInMainLight = function (mesh, includeDescendants 
     })
 }
 
+/**
+ * Create a light in the scene.
+ * @param {'directional' | 'hemispheric'} type - The type of light to create
+ * @param {string} name - Name for the light
+ * @returns {DirectionalLight | HemisphericLight} The created light
+ */
+Rendering.prototype.createLight = function (type, name) {
+    var scene = this.getScene()
+    if (type === 'directional') {
+        return new DirectionalLight(name, new Vector3(0, -1, 0), scene)
+    } else if (type === 'hemispheric') {
+        return new HemisphericLight(name, new Vector3(0, 1, 0), scene)
+    }
+    throw new Error('Unknown light type: ' + type)
+}
+
 // per-tick listener for rendering-related stuff
 /** @internal */
 Rendering.prototype.tick = function (dt) {
-    // nothing here at the moment
+    // Clean up disposed meshes from the main light's excludedMeshes array
+    // This prevents memory leaks when meshes are disposed without explicit cleanup
+    if (this.light && this.light.excludedMeshes && this.light.excludedMeshes.length > 0) {
+        var validMeshes = this.light.excludedMeshes.filter(function (m) {
+            return m && !m.isDisposed()
+        })
+        if (validMeshes.length !== this.light.excludedMeshes.length) {
+            this.light.excludedMeshes = validMeshes
+        }
+    }
 }
 
 

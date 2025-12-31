@@ -19,8 +19,19 @@ var math_color = require('@babylonjs/core/Maths/math.color');
 var directionalLight = require('@babylonjs/core/Lights/directionalLight');
 var ray = require('@babylonjs/core/Culling/ray');
 var material = require('@babylonjs/core/Materials/material');
+var hemisphericLight = require('@babylonjs/core/Lights/hemisphericLight');
 var standardMaterial = require('@babylonjs/core/Materials/standardMaterial');
 var linesBuilder = require('@babylonjs/core/Meshes/Builders/linesBuilder');
+var instancedMesh = require('@babylonjs/core/Meshes/instancedMesh');
+var boxBuilder = require('@babylonjs/core/Meshes/Builders/boxBuilder');
+var cylinderBuilder = require('@babylonjs/core/Meshes/Builders/cylinderBuilder');
+var sphereBuilder = require('@babylonjs/core/Meshes/Builders/sphereBuilder');
+var meshBuilder = require('@babylonjs/core/Meshes/meshBuilder');
+var shaderMaterial = require('@babylonjs/core/Materials/shaderMaterial');
+var skeleton = require('@babylonjs/core/Bones/skeleton');
+var animation = require('@babylonjs/core/Animations/animation');
+var animationGroup = require('@babylonjs/core/Animations/animationGroup');
+var sceneLoader = require('@babylonjs/core/Loading/sceneLoader');
 
 function _mergeNamespaces(n, m) {
 	m.forEach(function (e) {
@@ -10950,10 +10961,35 @@ Rendering.prototype.includeMeshInMainLight = function (mesh, includeDescendants 
     });
 };
 
+/**
+ * Create a light in the scene.
+ * @param {'directional' | 'hemispheric'} type - The type of light to create
+ * @param {string} name - Name for the light
+ * @returns {DirectionalLight | HemisphericLight} The created light
+ */
+Rendering.prototype.createLight = function (type, name) {
+    var scene = this.getScene();
+    if (type === 'directional') {
+        return new directionalLight.DirectionalLight(name, new math_vector.Vector3(0, -1, 0), scene)
+    } else if (type === 'hemispheric') {
+        return new hemisphericLight.HemisphericLight(name, new math_vector.Vector3(0, 1, 0), scene)
+    }
+    throw new Error('Unknown light type: ' + type)
+};
+
 // per-tick listener for rendering-related stuff
 /** @internal */
 Rendering.prototype.tick = function (dt) {
-    // nothing here at the moment
+    // Clean up disposed meshes from the main light's excludedMeshes array
+    // This prevents memory leaks when meshes are disposed without explicit cleanup
+    if (this.light && this.light.excludedMeshes && this.light.excludedMeshes.length > 0) {
+        var validMeshes = this.light.excludedMeshes.filter(function (m) {
+            return m && !m.isDisposed()
+        });
+        if (validMeshes.length !== this.light.excludedMeshes.length) {
+            this.light.excludedMeshes = validMeshes;
+        }
+    }
 };
 
 
@@ -15166,5 +15202,109 @@ function deprecateStuff(noa) {
     dep(noa.rendering, 'postMaterialCreationHook', 'Removed - use mesh post-creation hook instead`');
 }
 
+Object.defineProperty(exports, "CreateDisc", {
+	enumerable: true,
+	get: function () { return discBuilder.CreateDisc; }
+});
+Object.defineProperty(exports, "TransformNode", {
+	enumerable: true,
+	get: function () { return transformNode.TransformNode; }
+});
+Object.defineProperty(exports, "Texture", {
+	enumerable: true,
+	get: function () { return texture.Texture; }
+});
+Object.defineProperty(exports, "Mesh", {
+	enumerable: true,
+	get: function () { return mesh.Mesh; }
+});
+Object.defineProperty(exports, "VertexData", {
+	enumerable: true,
+	get: function () { return mesh_vertexData.VertexData; }
+});
+Object.defineProperty(exports, "Quaternion", {
+	enumerable: true,
+	get: function () { return math_vector.Quaternion; }
+});
+Object.defineProperty(exports, "Vector3", {
+	enumerable: true,
+	get: function () { return math_vector.Vector3; }
+});
+Object.defineProperty(exports, "Scene", {
+	enumerable: true,
+	get: function () { return scene.Scene; }
+});
+Object.defineProperty(exports, "CreatePlane", {
+	enumerable: true,
+	get: function () { return planeBuilder.CreatePlane; }
+});
+Object.defineProperty(exports, "Color3", {
+	enumerable: true,
+	get: function () { return math_color.Color3; }
+});
+Object.defineProperty(exports, "Color4", {
+	enumerable: true,
+	get: function () { return math_color.Color4; }
+});
+Object.defineProperty(exports, "DirectionalLight", {
+	enumerable: true,
+	get: function () { return directionalLight.DirectionalLight; }
+});
+Object.defineProperty(exports, "Material", {
+	enumerable: true,
+	get: function () { return material.Material; }
+});
+Object.defineProperty(exports, "HemisphericLight", {
+	enumerable: true,
+	get: function () { return hemisphericLight.HemisphericLight; }
+});
+Object.defineProperty(exports, "StandardMaterial", {
+	enumerable: true,
+	get: function () { return standardMaterial.StandardMaterial; }
+});
+Object.defineProperty(exports, "CreateLines", {
+	enumerable: true,
+	get: function () { return linesBuilder.CreateLines; }
+});
+Object.defineProperty(exports, "InstancedMesh", {
+	enumerable: true,
+	get: function () { return instancedMesh.InstancedMesh; }
+});
+Object.defineProperty(exports, "CreateBox", {
+	enumerable: true,
+	get: function () { return boxBuilder.CreateBox; }
+});
+Object.defineProperty(exports, "CreateCylinder", {
+	enumerable: true,
+	get: function () { return cylinderBuilder.CreateCylinder; }
+});
+Object.defineProperty(exports, "CreateSphere", {
+	enumerable: true,
+	get: function () { return sphereBuilder.CreateSphere; }
+});
+Object.defineProperty(exports, "MeshBuilder", {
+	enumerable: true,
+	get: function () { return meshBuilder.MeshBuilder; }
+});
+Object.defineProperty(exports, "ShaderMaterial", {
+	enumerable: true,
+	get: function () { return shaderMaterial.ShaderMaterial; }
+});
+Object.defineProperty(exports, "Skeleton", {
+	enumerable: true,
+	get: function () { return skeleton.Skeleton; }
+});
+Object.defineProperty(exports, "Animation", {
+	enumerable: true,
+	get: function () { return animation.Animation; }
+});
+Object.defineProperty(exports, "AnimationGroup", {
+	enumerable: true,
+	get: function () { return animationGroup.AnimationGroup; }
+});
+Object.defineProperty(exports, "SceneLoader", {
+	enumerable: true,
+	get: function () { return sceneLoader.SceneLoader; }
+});
 exports.Engine = Engine;
 //# sourceMappingURL=noa.cjs.js.map
