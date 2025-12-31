@@ -10,6 +10,7 @@ import collideEntitiesComp from "../components/collideEntities.js"
 import collideTerrainComp from "../components/collideTerrain.js"
 import fadeOnZoomComp from "../components/fadeOnZoom.js"
 import followsEntityComp from "../components/followsEntity.js"
+import labelComp from "../components/label.js"
 import meshComp from "../components/mesh.js"
 import movementComp from "../components/movement.js"
 import physicsComp from "../components/physics.js"
@@ -79,6 +80,7 @@ export class Entities extends ECS {
             collideTerrain: collideTerrainComp,
             fadeOnZoom: fadeOnZoomComp,
             followsEntity: followsEntityComp,
+            label: labelComp,
             mesh: meshComp,
             movement: movementComp,
             physics: physicsComp,
@@ -189,9 +191,15 @@ export class Entities extends ECS {
         */
         this.getCollideEntities = this.getStateAccessor(this.names.collideEntities)
 
+        /**
+         * Returns the entity's `label` component state
+         * @type {(id:number) => null | import("../components/label").LabelState}
+         */
+        this.getLabel = this.getStateAccessor(this.names.label)
+
 
         /**
-         * Pairwise collideEntities event - assign your own function to this 
+         * Pairwise collideEntities event - assign your own function to this
          * property if you want to handle entity-entity overlap events.
          * @type {(id1:number, id2:number) => void}
          */
@@ -442,6 +450,7 @@ export class Entities extends ECS {
         this.getMovement = null
         this.getCollideTerrain = null
         this.getCollideEntities = null
+        this.getLabel = null
 
         // Delete all entities (triggers onRemove handlers for cleanup)
         var ids = new Set()

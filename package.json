@@ -51,7 +51,11 @@
         "voxel-physics-engine": "^0.13.0"
     },
     "peerDependencies": {
-        "@babylonjs/core": "^8.0.0"
+        "@babylonjs/core": "^8.0.0",
+        "earcut": ">=2.0.0"
+    },
+    "optionalDependencies": {
+        "meshwriter": "file:../meshwriter-cudu"
     },
     "devDependencies": {
         "@babylonjs/core": "^8.0.0",

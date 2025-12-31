@@ -23,6 +23,7 @@ import { Registry } from './lib/registry'
 import { Rendering } from './lib/rendering'
 import { Physics } from './lib/physics'
 import { World } from './lib/world'
+import { Text } from './lib/text'
 import { locationHasher } from './lib/util'
 import { makeProfileHook } from './lib/util'
 import * as skeletonUtils from './lib/skeletonUtils'
@@ -195,6 +196,9 @@ export class Engine extends EventEmitter {
         this.rendering = new Rendering(this, opts, this.container.canvas)
 
         if (opts.silentBabylon) console.log = _consoleLog
+
+        /** 3D text rendering subsystem (optional - requires meshwriter) */
+        this.text = new Text(this, opts)
 
         /** Physics engine - solves collisions, properties, etc. */
         this.physics = new Physics(this, opts)
@@ -547,6 +551,9 @@ export class Engine extends EventEmitter {
         if (this.rendering && typeof this.rendering.dispose === 'function') {
             this.rendering.dispose()
         }
+        if (this.text && typeof this.text.dispose === 'function') {
+            this.text.dispose()
+        }
         if (this.container && typeof this.container.dispose === 'function') {
             this.container.dispose()
         }
@@ -564,6 +571,7 @@ export class Engine extends EventEmitter {
 
         this.inputs = null
         this.rendering = null
+        this.text = null
         this.container = null
         this.entities = null
         this.world = null

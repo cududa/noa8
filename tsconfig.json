@@ -11,6 +11,7 @@
         // output
         "outDir": "./dist",
         "target": "es2021",
+        "module": "ESNext",
         "declaration": true,
         "emitDeclarationOnly": true,
         "rootDir": ".",
@@ -29,7 +30,15 @@
             "./types",
             "./node_modules/@types"
         ],
-        // "moduleResolution": "Node",
+        // Force imports to resolve to this project's node_modules
+        // This prevents type conflicts with symlinked dependencies
+        "baseUrl": ".",
+        "paths": {
+            "@babylonjs/core": ["./node_modules/@babylonjs/core"],
+            "@babylonjs/core/*": ["./node_modules/@babylonjs/core/*"],
+            "meshwriter": ["./node_modules/meshwriter"],
+            "meshwriter/*": ["./node_modules/meshwriter/*"]
+        },
         // "downlevelIteration": true,
         // "useDefineForClassFields": false,
     },

@@ -104,6 +104,11 @@ export class Entities extends ECS {
         callback: Function;
     };
     /**
+     * Returns the entity's `label` component state
+     * @type {(id:number) => null | import("../components/label").LabelState}
+     */
+    getLabel: (id: number) => null | import("../components/label").LabelState;
+    /**
      * Pairwise collideEntities event - assign your own function to this
      * property if you want to handle entity-entity overlap events.
      * @type {(id1:number, id2:number) => void}

@@ -5,8 +5,8 @@ import json from '@rollup/plugin-json';
 export default {
   input: 'src/index.js',
 
-  // Keep @babylonjs/core as external - consumers will provide it
-  external: (id) => id.startsWith('@babylonjs/core'),
+  // Keep @babylonjs/core and meshwriter as external - consumers will provide them
+  external: (id) => id.startsWith('@babylonjs/core') || id.startsWith('meshwriter'),
 
   output: [
     {

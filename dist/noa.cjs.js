@@ -6913,6 +6913,203 @@ function followsEntityComp (noa) {
 
 }
 
+/**
+ * Label component - attaches floating 3D text to an entity.
+ *
+ * Supports:
+ * - Billboarding (text always faces camera)
+ * - Position offset from entity center
+ * - Dynamic text updates
+ * - Automatic world origin rebasing
+ *
+ * @example
+ * ```js
+ * // Add a label to an entity
+ * noa.ents.addComponent(entityId, noa.ents.names.label, {
+ *     text: 'Player Name',
+ *     offset: [0, 2.5, 0],
+ *     billboard: true,
+ *     options: {
+ *         letterHeight: 0.4,
+ *         color: '#FFFF00',
+ *     }
+ * })
+ *
+ * // Update label text dynamically
+ * const labelState = noa.ents.getLabel(entityId)
+ * labelState.text = 'New Name'
+ * ```
+ *
+ * @param {import('../index').Engine} noa
+ */
+
+function labelComp (noa) {
+
+    return {
+
+        name: 'label',
+
+        order: 85, // After shadow (80), before mesh render updates
+
+        state: {
+            /** Text content to display */
+            text: '',
+            /** Offset from entity position [x, y, z] */
+            offset: null,
+            /** Text rendering options */
+            options: null,
+            /** Whether to billboard (face camera) */
+            billboard: true,
+            /** @internal - TextHandle from text system */
+            _handle: null,
+            /** @internal - Cached text for change detection */
+            _cachedText: '',
+        },
+
+
+        onAdd: function (eid, state) {
+            // Initialize offset
+            if (!state.offset) {
+                state.offset = [0, 1.5, 0]; // Default: above entity
+            } else {
+                state.offset = glVec3.clone(state.offset);
+            }
+
+            // Initialize options
+            state.options = Object.assign({
+                letterHeight: 0.5,
+                letterThickness: 0.05,
+                color: '#FFFFFF',
+                alpha: 1,
+                anchor: 'center',
+            }, state.options || {});
+
+            state._cachedText = state.text;
+
+            // Create text if system is ready
+            createLabelText(noa, eid, state);
+        },
+
+
+        onRemove: function (eid, state) {
+            if (state._handle) {
+                state._handle.dispose();
+                state._handle = null;
+            }
+            state.offset = null;
+            state.options = null;
+        },
+
+
+        // Tick system: handle text updates
+        system: function labelSystem(dt, states) {
+            for (var i = 0; i < states.length; i++) {
+                var state = states[i];
+
+                // Check for text content changes
+                if (state.text !== state._cachedText) {
+                    state._cachedText = state.text;
+                    updateLabelText(noa, state.__id, state);
+                }
+            }
+        },
+
+
+        // Render system: update label positions to match entity render positions
+        renderSystem: function labelRenderSystem(dt, states) {
+            for (var i = 0; i < states.length; i++) {
+                var state = states[i];
+                if (!state._handle || !state._handle.mesh) continue
+
+                var posData = noa.ents.getPositionData(state.__id);
+                if (!posData) continue // defensive check for mid-frame deletion
+
+                var rpos = posData._renderPosition;
+                var mesh = state._handle.mesh;
+
+                // Position = render position + offset
+                mesh.position.copyFromFloats(
+                    rpos[0] + state.offset[0],
+                    rpos[1] + state.offset[1],
+                    rpos[2] + state.offset[2]
+                );
+            }
+        }
+
+    }
+
+
+    function createLabelText(noa, eid, state) {
+        if (!noa.text || !noa.text.ready) {
+            // Text system not ready - try again later via deferred init
+            noa.rendering.onSceneReady(() => {
+                if (state._handle) return // Already created
+                createLabelText(noa, eid, state);
+            });
+            return
+        }
+
+        if (!state.text) return
+
+        // Get entity position for initial placement
+        var posData = noa.ents.getPositionData(eid);
+        var position = posData ? posData.position.slice() : [0, 0, 0];
+        glVec3.add(position, position, state.offset);
+
+        var options = Object.assign({}, state.options, { position });
+
+        // Create billboard or regular text
+        state._handle = state.billboard
+            ? noa.text.createBillboardText(state.text, options)
+            : noa.text.createWorldText(state.text, options);
+    }
+
+
+    function updateLabelText(noa, eid, state) {
+        if (!noa.text || !noa.text.ready) return
+
+        if (!state.text) {
+            // Empty text - dispose existing
+            if (state._handle) {
+                state._handle.dispose();
+                state._handle = null;
+            }
+            return
+        }
+
+        if (state._handle) {
+            // Update existing - get position from current mesh
+            var mesh = state._handle.mesh;
+            var position = [
+                mesh.position.x + noa.worldOriginOffset[0],
+                mesh.position.y + noa.worldOriginOffset[1],
+                mesh.position.z + noa.worldOriginOffset[2],
+            ];
+            var options = Object.assign({}, state.options, { position });
+
+            // Dispose and recreate (MeshWriter doesn't support in-place updates)
+            var wasBillboard = state._handle._billboard;
+            state._handle.dispose();
+
+            state._handle = wasBillboard
+                ? noa.text.createBillboardText(state.text, options)
+                : noa.text.createWorldText(state.text, options);
+        } else {
+            // Create new
+            createLabelText(noa, eid, state);
+        }
+    }
+}
+
+
+/**
+ * @typedef {object} LabelState
+ * @property {string} text - Text content to display
+ * @property {number[]} offset - Offset from entity position [x, y, z]
+ * @property {object} options - Text rendering options
+ * @property {boolean} billboard - Whether to billboard (face camera)
+ */
+
 function meshComp (noa) {
     return {
 
@@ -7410,6 +7607,7 @@ class Entities extends ECS {
             collideTerrain: collideTerrainComp,
             fadeOnZoom: fadeOnZoomComp,
             followsEntity: followsEntityComp,
+            label: labelComp,
             mesh: meshComp,
             movement: movementComp,
             physics: physicsComp,
@@ -7520,9 +7718,15 @@ class Entities extends ECS {
         */
         this.getCollideEntities = this.getStateAccessor(this.names.collideEntities);
 
+        /**
+         * Returns the entity's `label` component state
+         * @type {(id:number) => null | import("../components/label").LabelState}
+         */
+        this.getLabel = this.getStateAccessor(this.names.label);
+
 
         /**
-         * Pairwise collideEntities event - assign your own function to this 
+         * Pairwise collideEntities event - assign your own function to this
          * property if you want to handle entity-entity overlap events.
          * @type {(id1:number, id2:number) => void}
          */
@@ -7773,6 +7977,7 @@ class Entities extends ECS {
         this.getMovement = null;
         this.getCollideTerrain = null;
         this.getCollideEntities = null;
+        this.getLabel = null;
 
         // Delete all entities (triggers onRemove handlers for cleanup)
         var ids = new Set();
@@ -9663,7 +9868,7 @@ function unpackAOMask(aomask) {
     return [A, B, C, D]
 }
 
-var defaults$1 = {
+var defaults$2 = {
     texturePath: ''
 };
 
@@ -9696,7 +9901,7 @@ class Registry {
      * @param {import('../index').Engine} noa
     */
     constructor(noa, opts) {
-        opts = Object.assign({}, defaults$1, opts);
+        opts = Object.assign({}, defaults$2, opts);
         /** @internal */
         this.noa = noa;
 
@@ -10268,7 +10473,7 @@ if (typeof material.Material.prototype.needAlphaTestingForMesh !== 'function') {
 
 
 
-var defaults = {
+var defaults$1 = {
     showFPS: false,
     antiAlias: true,
     clearColor: [0.8, 0.9, 1],
@@ -10318,7 +10523,7 @@ class Rendering {
      * @param {import('../index').Engine} noa  
     */
     constructor(noa, opts, canvas) {
-        opts = Object.assign({}, defaults, opts);
+        opts = Object.assign({}, defaults$1, opts);
         /** @internal */
         this.noa = noa;
 
@@ -13367,6 +13572,396 @@ var profile_queues_hook = ((every) => {
     return () => { }
 })();
 
+var defaults = {
+    defaultFont: 'Helvetica',
+    scale: 1,
+    enabled: true,
+};
+
+
+/**
+ * `noa.text` - 3D text rendering subsystem (optional)
+ *
+ * Provides factory methods for creating 3D text meshes in the world.
+ * Uses meshwriter-cudu for text-to-mesh conversion with Babylon.js.
+ *
+ * This module is optional - it only initializes if meshwriter is available.
+ * If meshwriter is not installed, `noa.text.ready` will be false and
+ * text creation methods will return null.
+ *
+ * This module uses the following default options (from the options
+ * object passed to the {@link Engine}):
+ * ```js
+ * {
+ *     defaultFont: 'Helvetica',
+ *     scale: 1,
+ *     enabled: true,
+ * }
+ * ```
+ */
+
+class Text {
+
+    /**
+     * @internal
+     * @param {import('../index').Engine} noa
+     * @param {object} opts
+     */
+    constructor(noa, opts) {
+        opts = Object.assign({}, defaults, opts);
+
+        /** @internal */
+        this.noa = noa;
+
+        /** Whether text system is available and initialized */
+        this.ready = false;
+
+        /** @internal */
+        this._disposed = false;
+
+        /** @internal - MeshWriter constructor (set after init) */
+        this._Writer = null;
+
+        /** @internal - registerFont function from meshwriter */
+        this._registerFont = null;
+
+        /** @internal - MeshWriter module reference */
+        this._MeshWriter = null;
+
+        /** @internal - Registry of active text instances for cleanup */
+        this._activeTexts = new Map();
+
+        /** @internal - Next unique ID for text instances */
+        this._nextId = 1;
+
+        /** Default options for text creation */
+        this.defaultOptions = {
+            font: opts.defaultFont,
+            scale: opts.scale,
+            letterHeight: 1,
+            letterThickness: 0.1,
+            color: '#FFFFFF',
+            alpha: 1,
+            /** @type {'left' | 'center' | 'right'} */
+            anchor: /** @type {'center'} */ ('center'),
+        };
+
+        // Attempt lazy initialization when scene is ready
+        if (opts.enabled) {
+            this._initWhenReady();
+        }
+    }
+
+
+    /** @internal */
+    _initWhenReady() {
+        this.noa.rendering.onSceneReady(async () => {
+            await this._initialize();
+        });
+    }
+
+
+    /** @internal */
+    async _initialize() {
+        try {
+            // Dynamic import to handle optional dependency
+            const meshwriter = await import('meshwriter');
+            const { MeshWriter, registerFont } = meshwriter;
+
+            // Store for font registration API
+            this._registerFont = registerFont;
+            this._MeshWriter = MeshWriter;
+
+            // Import and register default font
+            try {
+                const helvetica = await import('meshwriter/fonts/helvetica');
+                registerFont('Helvetica', helvetica.default);
+            } catch (e) {
+                console.warn('[noa.text] Could not load default Helvetica font:', e);
+            }
+
+            // Create MeshWriter instance (async for Babylon 8 CSG2)
+            this._Writer = await MeshWriter.createAsync(
+                this.noa.rendering.getScene(),
+                { scale: this.defaultOptions.scale }
+            );
+
+            this.ready = true;
+            console.log('[noa.text] Text subsystem initialized');
+        } catch (e) {
+            console.warn('[noa.text] MeshWriter not available, text features disabled:', e.message);
+            this.ready = false;
+        }
+    }
+
+
+    /**
+     * Register a font for use with text rendering.
+     * Fonts must be registered before they can be used.
+     *
+     * @example
+     * ```js
+     * import jura from 'meshwriter/fonts/jura'
+     * noa.text.registerFont('Jura', jura)
+     * ```
+     *
+     * @param {string} name - Font name to register
+     * @param {object} fontData - Font data (FontSpec object) from meshwriter/fonts
+     */
+    registerFont(name, fontData) {
+        if (!this._registerFont) {
+            console.warn('[noa.text] Cannot register font - text system not initialized');
+            return
+        }
+        this._registerFont(name, fontData);
+    }
+
+
+    /**
+     * Create 3D text mesh at a world position.
+     * Returns a TextHandle for manipulation and disposal.
+     *
+     * @example
+     * ```js
+     * const sign = noa.text.createWorldText('Welcome!', {
+     *     position: [100, 10, 50],
+     *     letterHeight: 2,
+     *     color: '#8B4513',
+     * })
+     * sign.mesh.rotation.y = Math.PI / 4
+     * ```
+     *
+     * @param {string} content - Text string to render
+     * @param {TextOptions} [options] - Text options
+     * @returns {TextHandle|null} - Handle for the text, or null if not ready
+     */
+    createWorldText(content, options = {}) {
+        if (!this.ready || !this._Writer) {
+            console.warn('[noa.text] Text system not ready');
+            return null
+        }
+
+        var opts = Object.assign({}, this.defaultOptions, options);
+        var position = opts.position || [0, 0, 0];
+
+        // Create meshwriter text instance
+        var textInstance = new this._Writer(content, {
+            'font-family': opts.font,
+            'letter-height': opts.letterHeight,
+            'letter-thickness': opts.letterThickness,
+            'color': opts.color,
+            'alpha': opts.alpha,
+            'anchor': opts.anchor,
+            'position': { x: 0, y: 0, z: 0 }
+        });
+
+        var mesh = textInstance.getMesh();
+        if (!mesh) {
+            console.warn('[noa.text] Failed to create text mesh');
+            return null
+        }
+
+        // Add to noa scene management
+        this.noa.rendering.addMeshToScene(mesh, false, position);
+
+        // Position mesh in world (convert global to local)
+        var localPos = this.noa.globalToLocal(position, null, []);
+        mesh.position.copyFromFloats(localPos[0], localPos[1], localPos[2]);
+
+        // Text renders in XZ plane by default, rotate to be vertical (upright)
+        mesh.rotation.x = -Math.PI / 2;
+
+        // Create handle for management
+        var id = this._nextId++;
+        var handle = new TextHandle(this, id, textInstance, mesh, content, opts);
+        this._activeTexts.set(id, handle);
+
+        return handle
+    }
+
+
+    /**
+     * Create billboarded text that always faces the camera.
+     * Useful for entity labels and floating names.
+     *
+     * @example
+     * ```js
+     * const label = noa.text.createBillboardText('Player Name', {
+     *     position: [10, 5, 10],
+     *     letterHeight: 0.5,
+     *     color: '#FFFF00',
+     * })
+     * ```
+     *
+     * @param {string} content - Text string
+     * @param {TextOptions} [options] - Same as createWorldText
+     * @returns {TextHandle|null}
+     */
+    createBillboardText(content, options = {}) {
+        var handle = this.createWorldText(content, options);
+        if (handle) {
+            handle._billboard = true;
+            handle.mesh.billboardMode = 7; // BABYLON.Mesh.BILLBOARDMODE_ALL
+        }
+        return handle
+    }
+
+
+    /**
+     * Update text content (dispose old, create new).
+     * MeshWriter doesn't support in-place updates, so this recreates the mesh.
+     * Position, rotation, and options are preserved.
+     *
+     * @example
+     * ```js
+     * const newHandle = noa.text.updateText(oldHandle, 'New text content')
+     * ```
+     *
+     * @param {TextHandle} handle - Existing text handle
+     * @param {string} newContent - New text content
+     * @returns {TextHandle|null} - New handle (old is disposed)
+     */
+    updateText(handle, newContent) {
+        if (!handle || handle._disposed) return null
+
+        // Preserve position and options
+        var mesh = handle.mesh;
+        var position = [
+            mesh.position.x + this.noa.worldOriginOffset[0],
+            mesh.position.y + this.noa.worldOriginOffset[1],
+            mesh.position.z + this.noa.worldOriginOffset[2],
+        ];
+        var rotation = mesh.rotation.clone();
+        var wasBillboard = handle._billboard;
+        var options = Object.assign({}, handle._options, { position });
+
+        // Dispose old
+        handle.dispose();
+
+        // Create new
+        var newHandle = wasBillboard
+            ? this.createBillboardText(newContent, options)
+            : this.createWorldText(newContent, options);
+
+        if (newHandle && rotation) {
+            newHandle.mesh.rotation.copyFrom(rotation);
+        }
+
+        return newHandle
+    }
+
+
+    /** @internal */
+    _removeText(id) {
+        this._activeTexts.delete(id);
+    }
+
+
+    /** Dispose all text and cleanup */
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true;
+
+        // Dispose all active texts
+        for (var handle of this._activeTexts.values()) {
+            handle.dispose();
+        }
+        this._activeTexts.clear();
+
+        this._Writer = null;
+        this._registerFont = null;
+        this._MeshWriter = null;
+        this.ready = false;
+    }
+}
+
+
+/**
+ * Handle for managing a text instance.
+ * Provides methods to modify and dispose the text.
+ */
+class TextHandle {
+
+    /**
+     * @internal
+     * @param {Text} textSystem
+     * @param {number} id
+     * @param {object} textInstance
+     * @param {import('@babylonjs/core').Mesh} mesh
+     * @param {string} content
+     * @param {object} options
+     */
+    constructor(textSystem, id, textInstance, mesh, content, options) {
+        /** @internal */
+        this._textSystem = textSystem;
+        /** @internal */
+        this._id = id;
+        /** @internal */
+        this._textInstance = textInstance;
+        /** @internal */
+        this._disposed = false;
+        /** @internal */
+        this._billboard = false;
+        /** @internal */
+        this._options = options;
+
+        /** The Babylon mesh for this text */
+        this.mesh = mesh;
+        /** The text content */
+        this.content = content;
+    }
+
+    /**
+     * Set the text color
+     * @param {string} color - Hex color string (e.g., '#FF0000')
+     */
+    setColor(color) {
+        if (this._disposed) return
+        this._textInstance.setColor(color);
+    }
+
+    /**
+     * Set the text alpha/transparency
+     * @param {number} alpha - Transparency value (0-1)
+     */
+    setAlpha(alpha) {
+        if (this._disposed) return
+        this._textInstance.setAlpha(alpha);
+    }
+
+    /**
+     * Get the underlying Babylon mesh
+     * @returns {import('@babylonjs/core').Mesh}
+     */
+    getMesh() {
+        return this.mesh
+    }
+
+    /** Dispose this text instance and clean up resources */
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true;
+
+        this._textInstance.dispose();
+        this._textSystem._removeText(this._id);
+
+        this._textInstance = null;
+        this.mesh = null;
+    }
+}
+
+
+/**
+ * @typedef {object} TextOptions
+ * @property {number[]} [position] - World position [x, y, z]
+ * @property {string} [font] - Font family name (default: 'Helvetica')
+ * @property {number} [letterHeight] - Height of letters in world units (default: 1)
+ * @property {number} [letterThickness] - Depth of letters (default: 0.1)
+ * @property {string} [color] - Hex color string (default: '#FFFFFF')
+ * @property {number} [alpha] - Transparency 0-1 (default: 1)
+ * @property {string} [anchor] - 'left', 'center', or 'right' (default: 'center')
+ */
+
 /**
  * Apply a pre-rotation and an animation rotation on top of a bone's rest rotation.
  * This expects GLB bones to have linked TransformNodes.
@@ -13570,6 +14165,9 @@ class Engine extends eventsExports.EventEmitter {
         this.rendering = new Rendering(this, opts, this.container.canvas);
 
         if (opts.silentBabylon) console.log = _consoleLog;
+
+        /** 3D text rendering subsystem (optional - requires meshwriter) */
+        this.text = new Text(this, opts);
 
         /** Physics engine - solves collisions, properties, etc. */
         this.physics = new Physics(this, opts);
@@ -13905,6 +14503,9 @@ class Engine extends eventsExports.EventEmitter {
         if (this.rendering && typeof this.rendering.dispose === 'function') {
             this.rendering.dispose();
         }
+        if (this.text && typeof this.text.dispose === 'function') {
+            this.text.dispose();
+        }
         if (this.container && typeof this.container.dispose === 'function') {
             this.container.dispose();
         }
@@ -13922,6 +14523,7 @@ class Engine extends eventsExports.EventEmitter {
 
         this.inputs = null;
         this.rendering = null;
+        this.text = null;
         this.container = null;
         this.entities = null;
         this.world = null;

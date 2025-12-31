@@ -95,6 +95,8 @@ export class Engine extends EventEmitter {
     world: World;
     /** Rendering manager */
     rendering: Rendering;
+    /** 3D text rendering subsystem (optional - requires meshwriter) */
+    text: Text;
     /** Physics engine - solves collisions, properties, etc. */
     physics: Physics;
     /** Entity manager / Entity Component System (ECS) */
@@ -262,6 +264,7 @@ import { Inputs } from './lib/inputs';
 import { Registry } from './lib/registry';
 import { World } from './lib/world';
 import { Rendering } from './lib/rendering';
+import { Text } from './lib/text';
 import { Physics } from './lib/physics';
 import { Entities } from './lib/entities';
 import { Camera } from './lib/camera';
