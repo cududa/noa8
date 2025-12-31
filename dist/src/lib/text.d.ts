@@ -31,6 +31,10 @@ export class Text {
     ready: boolean;
     /** @internal */
     _disposed: boolean;
+    /** Whether initialization permanently failed (e.g., meshwriter missing) */
+    initFailed: boolean;
+    /** Deferred callbacks waiting for initialization */
+    _readyCallbacks: any[];
     /** @internal - MeshWriter constructor (set after init) */
     _Writer: import("meshwriter").MeshWriterConstructor;
     /** @internal - registerFont function from meshwriter */
@@ -56,6 +60,13 @@ export class Text {
     _initWhenReady(): void;
     /** @internal */
     _initialize(): Promise<void>;
+    /** @internal */
+    _flushReadyCallbacks(): void;
+    /**
+     * Register a callback to run when the text system becomes ready.
+     * If initialization already completed, the callback fires immediately.
+     */
+    onReady(callback: any): void;
     /**
      * Register a font for use with text rendering.
      * Fonts must be registered before they can be used.

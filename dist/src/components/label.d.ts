@@ -43,6 +43,8 @@ export default function _default(noa: import("../index").Engine): {
         _handle: any;
         /** @internal - Cached text for change detection */
         _cachedText: string;
+        /** @internal - Whether we're waiting for the text system to init */
+        _waitingForText: boolean;
     };
     onAdd: (eid: any, state: any) => void;
     onRemove: (eid: any, state: any) => void;

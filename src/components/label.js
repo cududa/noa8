@@ -53,6 +53,8 @@ export default function (noa) {
             _handle: null,
             /** @internal - Cached text for change detection */
             _cachedText: '',
+            /** @internal - Whether we're waiting for the text system to init */
+            _waitingForText: false,
         },
 
 
@@ -87,6 +89,7 @@ export default function (noa) {
             }
             state.offset = null
             state.options = null
+            state._waitingForText = false
         },
 
 
@@ -129,14 +132,19 @@ export default function (noa) {
 
 
     function createLabelText(noa, eid, state) {
-        if (!noa.text || !noa.text.ready) {
-            // Text system not ready - try again later via deferred init
-            noa.rendering.onSceneReady(() => {
-                if (state._handle) return // Already created
-                createLabelText(noa, eid, state)
+        if (!noa.text || noa.text.initFailed) return
+        if (!noa.text.ready) {
+            if (state._waitingForText) return
+            state._waitingForText = true
+            noa.text.onReady(() => {
+                state._waitingForText = false
+                if (!state._handle && noa.ents.getPositionData(state.__id)) {
+                    createLabelText(noa, state.__id, state)
+                }
             })
             return
         }
+        state._waitingForText = false
 
         if (!state.text) return
 
@@ -155,7 +163,14 @@ export default function (noa) {
 
 
     function updateLabelText(noa, eid, state) {
-        if (!noa.text || !noa.text.ready) return
+        if (!noa.text) return
+        if (noa.text.initFailed || !noa.text.ready) {
+            if (state._handle) {
+                state._handle.dispose()
+                state._handle = null
+            }
+            return
+        }
 
         if (!state.text) {
             // Empty text - dispose existing

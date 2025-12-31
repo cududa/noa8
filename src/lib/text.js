@@ -48,6 +48,10 @@ export class Text {
 
         /** @internal */
         this._disposed = false
+        /** Whether initialization permanently failed (e.g., meshwriter missing) */
+        this.initFailed = false
+        /** Deferred callbacks waiting for initialization */
+        this._readyCallbacks = []
 
         /** @internal - MeshWriter constructor (set after init) */
         this._Writer = null
@@ -117,11 +121,47 @@ export class Text {
             )
 
             this.ready = true
+            this.initFailed = false
             console.log('[noa.text] Text subsystem initialized')
+            this._flushReadyCallbacks()
         } catch (e) {
             console.warn('[noa.text] MeshWriter not available, text features disabled:', e.message)
             this.ready = false
+            this.initFailed = true
+            this._readyCallbacks.length = 0
         }
+    }
+
+    /** @internal */
+    _flushReadyCallbacks() {
+        if (!this._readyCallbacks.length) return
+        const callbacks = this._readyCallbacks.slice()
+        this._readyCallbacks.length = 0
+        callbacks.forEach((cb) => {
+            try {
+                cb()
+            } catch (err) {
+                console.error('[noa.text] onReady callback error:', err)
+            }
+        })
+    }
+
+    /**
+     * Register a callback to run when the text system becomes ready.
+     * If initialization already completed, the callback fires immediately.
+     */
+    onReady(callback) {
+        if (typeof callback !== 'function') return
+        if (this.ready) {
+            try {
+                callback()
+            } catch (err) {
+                console.error('[noa.text] onReady callback error:', err)
+            }
+            return
+        }
+        if (this.initFailed) return
+        this._readyCallbacks.push(callback)
     }
 
 
@@ -166,6 +206,7 @@ export class Text {
      * @returns {TextHandle|null} - Handle for the text, or null if not ready
      */
     createWorldText(content, options = {}) {
+        if (this.initFailed) return null
         if (!this.ready || !this._Writer) {
             console.warn('[noa.text] Text system not ready')
             return null
@@ -302,6 +343,8 @@ export class Text {
         this._registerFont = null
         this._MeshWriter = null
         this.ready = false
+        this.initFailed = false
+        this._readyCallbacks.length = 0
     }
 }
 
@@ -372,7 +415,37 @@ class TextHandle {
         if (this._disposed) return
         this._disposed = true
 
-        this._textInstance.dispose()
+        if (this._textInstance && typeof this._textInstance.dispose === 'function') {
+            try {
+                this._textInstance.dispose()
+            } catch (err) {
+                console.warn('[noa.text] Failed to dispose text instance:', err)
+            }
+        }
+        if (this.mesh) {
+            try {
+                this._textSystem.noa.rendering.removeMeshFromScene(this.mesh)
+            } catch (err) {
+                // ignore - mesh may not be registered
+            }
+            let disposed = false
+            if (typeof this.mesh.isDisposed === 'function') {
+                try {
+                    disposed = this.mesh.isDisposed()
+                } catch (err) {
+                    disposed = false
+                }
+            } else if (typeof this.mesh._isDisposed === 'boolean') {
+                disposed = this.mesh._isDisposed
+            }
+            if (!disposed && typeof this.mesh.dispose === 'function') {
+                try {
+                    this.mesh.dispose()
+                } catch (err) {
+                    console.warn('[noa.text] Failed to dispose text mesh:', err)
+                }
+            }
+        }
         this._textSystem._removeText(this._id)
 
         this._textInstance = null
