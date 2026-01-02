@@ -264,7 +264,7 @@ import { Inputs } from './lib/inputs';
 import { Registry } from './lib/registry';
 import { World } from './lib/world';
 import { Rendering } from './lib/rendering';
-import { Text } from './lib/text';
+import { Text } from './lib/text/index.js';
 import { Physics } from './lib/physics';
 import { Entities } from './lib/entities';
 import { Camera } from './lib/camera';

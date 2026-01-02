@@ -25,8 +25,8 @@ var meshBuilder = require('@babylonjs/core/Meshes/meshBuilder');
 var shaderMaterial = require('@babylonjs/core/Materials/shaderMaterial');
 var sceneLoader = require('@babylonjs/core/Loading/sceneLoader');
 var linesBuilder = require('@babylonjs/core/Meshes/Builders/linesBuilder');
-var dynamicTexture = require('@babylonjs/core/Materials/Textures/dynamicTexture');
 var fresnelParameters = require('@babylonjs/core/Materials/fresnelParameters');
+var dynamicTexture = require('@babylonjs/core/Materials/Textures/dynamicTexture');
 var instancedMesh = require('@babylonjs/core/Meshes/instancedMesh');
 var boxBuilder = require('@babylonjs/core/Meshes/Builders/boxBuilder');
 var cylinderBuilder = require('@babylonjs/core/Meshes/Builders/cylinderBuilder');
@@ -10076,7 +10076,7 @@ function unpackAOMask(aomask) {
     return [A, B, C, D]
 }
 
-var defaults$2 = {
+var defaults$1 = {
     texturePath: ''
 };
 
@@ -10109,7 +10109,7 @@ class Registry {
      * @param {import('../index').Engine} noa
     */
     constructor(noa, opts) {
-        opts = Object.assign({}, defaults$2, opts);
+        opts = Object.assign({}, defaults$1, opts);
         /** @internal */
         this.noa = noa;
 
@@ -10681,7 +10681,7 @@ if (typeof material.Material.prototype.needAlphaTestingForMesh !== 'function') {
 
 
 
-var defaults$1 = {
+var defaults = {
     showFPS: false,
     antiAlias: true,
     clearColor: [0.8, 0.9, 1],
@@ -10731,7 +10731,7 @@ class Rendering {
      * @param {import('../index').Engine} noa  
     */
     constructor(noa, opts, canvas) {
-        opts = Object.assign({}, defaults$1, opts);
+        opts = Object.assign({}, defaults, opts);
         /** @internal */
         this.noa = noa;
 
@@ -14313,6 +14313,341 @@ var profile_queues_hook = ((every) => {
 })();
 
 /**
+ * Shadow instance tracking.
+ * Manages Map of textId -> shadow data.
+ */
+
+/**
+ * @typedef {object} ShadowData
+ * @property {object} textHandle - Reference to text handle
+ * @property {object} shadow - Babylon InstancedMesh
+ * @property {object} opts - Shadow options
+ * @property {number} width - Shadow width
+ * @property {number} depth - Shadow depth
+ * @property {number} centerOffsetX - X offset from mesh origin
+ * @property {number} centerOffsetZ - Z offset from mesh origin
+ */
+
+class ShadowInstances {
+    constructor() {
+        /** @type {Map<number, ShadowData>} */
+        this._instances = new Map();
+    }
+
+    /**
+     * Get shadow data by text ID.
+     * @param {number} textId
+     * @returns {ShadowData|undefined}
+     */
+    get(textId) {
+        return this._instances.get(textId)
+    }
+
+    /**
+     * Check if shadow exists for text ID.
+     * @param {number} textId
+     * @returns {boolean}
+     */
+    has(textId) {
+        return this._instances.has(textId)
+    }
+
+    /**
+     * Set shadow data for text ID.
+     * @param {number} textId
+     * @param {ShadowData} data
+     */
+    set(textId, data) {
+        this._instances.set(textId, data);
+    }
+
+    /**
+     * Delete shadow data for text ID.
+     * @param {number} textId
+     * @returns {boolean}
+     */
+    delete(textId) {
+        return this._instances.delete(textId)
+    }
+
+    /**
+     * Get iterator over all entries.
+     * @returns {IterableIterator<[number, ShadowData]>}
+     */
+    entries() {
+        return this._instances.entries()
+    }
+
+    /**
+     * Get iterator over all keys (text IDs).
+     * @returns {IterableIterator<number>}
+     */
+    keys() {
+        return this._instances.keys()
+    }
+
+    /**
+     * Get number of shadows.
+     * @returns {number}
+     */
+    get size() {
+        return this._instances.size
+    }
+
+    /**
+     * Clear all instances.
+     */
+    clear() {
+        this._instances.clear();
+    }
+
+    /**
+     * Iterate over entries with forEach.
+     * @param {(value: ShadowData, key: number, map: Map<number, ShadowData>) => void} callback
+     */
+    forEach(callback) {
+        this._instances.forEach(callback);
+    }
+}
+
+/**
+ * Shadow resource creation and management.
+ * Creates shared disc mesh, material, and texture for text shadows.
+ */
+
+/**
+ * @typedef {object} ShadowResourcesResult
+ * @property {object} sourceMesh - Source disc mesh for instancing
+ * @property {object} material - Shadow material
+ * @property {object|null} texture - Radial opacity texture
+ */
+
+/**
+ * Create all shadow resources.
+ * @param {object} scene - Babylon scene
+ * @param {object} rendering - noa.rendering reference
+ * @param {number} opacity - Shadow opacity
+ * @returns {ShadowResourcesResult}
+ */
+function createShadowResources(scene, rendering, opacity) {
+    // Create source disc mesh
+    var sourceMesh = discBuilder.CreateDisc('text_shadow_source', {
+        radius: 0.5,
+        tessellation: 16,
+    }, scene);
+    sourceMesh.rotation.x = Math.PI / 2;
+
+    // Create shadow material
+    var material = rendering.makeStandardMaterial('text_shadow_mat');
+    material.diffuseColor.set(0, 0, 0);
+    material.ambientColor.set(0, 0, 0);
+    material.emissiveColor.set(0, 0, 0);
+    material.specularColor.set(0, 0, 0);
+    material.disableLighting = true;  // Prevent shadow reacting to scene ambient
+    material.backFaceCulling = false;
+    material.alpha = opacity;
+
+    // Create radial texture for soft edges
+    var texture = createShadowTexture(scene);
+    if (texture) {
+        texture.hasAlpha = true;
+        material.opacityTexture = texture;
+    }
+
+    material.freeze();
+    sourceMesh.material = material;
+
+    // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue
+    fixBoundingInfo(sourceMesh);
+
+    // Hide source mesh
+    rendering.setMeshVisibility(sourceMesh, false);
+
+    return { sourceMesh, material, texture }
+}
+
+/**
+ * Create radial gradient texture for shadow soft edges.
+ * @param {object} scene - Babylon scene
+ * @returns {object|null}
+ */
+function createShadowTexture(scene) {
+    try {
+        var size = 128;
+        var texture$1 = new dynamicTexture.DynamicTexture('text_shadow_texture', { width: size, height: size }, scene, false, texture.Texture.BILINEAR_SAMPLINGMODE);
+        var ctx = texture$1.getContext();
+        if (ctx) {
+            var half = size / 2;
+            var gradient = ctx.createRadialGradient(half, half, half * 0.2, half, half, half);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.clearRect(0, 0, size, size);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            texture$1.update(false);
+        }
+        texture$1.wrapU = texture.Texture.CLAMP_ADDRESSMODE;
+        texture$1.wrapV = texture.Texture.CLAMP_ADDRESSMODE;
+        return texture$1
+    } catch (err) {
+        return null
+    }
+}
+
+/**
+ * Fix Babylon.js 8 SubMesh.getBoundingInfo() issue.
+ * @param {object} mesh - Babylon mesh
+ */
+function fixBoundingInfo(mesh) {
+    mesh.refreshBoundingInfo();
+    var bi = mesh.getBoundingInfo();
+    if (mesh.subMeshes && bi) {
+        mesh.subMeshes.forEach(sm => {
+            /** @type {any} */ (sm)._boundingInfo = bi;
+        });
+    }
+}
+
+/**
+ * Dispose all shadow resources.
+ * @param {object} rendering - noa.rendering reference
+ * @param {object|null} sourceMesh
+ * @param {object|null} material
+ * @param {object|null} texture
+ */
+function disposeShadowResources(rendering, sourceMesh, material, texture) {
+    if (sourceMesh) {
+        rendering.removeMeshFromScene(sourceMesh);
+        sourceMesh.dispose();
+    }
+    if (material) {
+        material.dispose();
+    }
+    if (texture) {
+        texture.dispose();
+    }
+}
+
+/**
+ * Update material opacity (unfreezes and refreezes).
+ * @param {object} material - Shadow material
+ * @param {number} opacity - New opacity value
+ */
+function updateMaterialOpacity(material, opacity) {
+    if (!material) return
+    material.unfreeze();
+    material.alpha = opacity;
+    material.freeze();
+}
+
+/**
+ * Shadow measurement utilities.
+ * Extracts dimensions from text mesh bounding box.
+ */
+
+/**
+ * @typedef {object} MeshMetrics
+ * @property {number} width - Shadow width
+ * @property {number} depth - Shadow depth
+ * @property {number} centerOffsetX - X offset from mesh origin to visual center
+ * @property {number} centerOffsetZ - Z offset from mesh origin to visual center
+ */
+
+/**
+ * Measure text mesh to get shadow dimensions.
+ * @param {object} mesh - Babylon mesh
+ * @returns {MeshMetrics}
+ */
+function measureTextMesh(mesh) {
+    var width = 1;
+    var depth = 0.3;
+    var centerOffsetX = 0;
+    var centerOffsetZ = 0;
+
+    mesh.computeWorldMatrix(true);
+    mesh.refreshBoundingInfo();
+    var boundingInfo = mesh.getBoundingInfo();
+    if (boundingInfo && boundingInfo.boundingBox) {
+        var bb = boundingInfo.boundingBox;
+        width = Math.max(0.5, bb.extendSize.x * 2);
+        depth = Math.max(0.2, bb.extendSize.z * 2, width * 0.15);
+
+        // Compute offset from mesh origin to visual center in SCENE coords
+        // This is constant and doesn't change with rebase
+        centerOffsetX = bb.centerWorld.x - mesh.position.x;
+        centerOffsetZ = bb.centerWorld.z - mesh.position.z;
+    }
+
+    return { width, depth, centerOffsetX, centerOffsetZ }
+}
+
+/**
+ * Per-frame shadow update logic.
+ * Handles raycasting and shadow positioning.
+ */
+
+var down = glVec3.fromValues(0, -1, 0);
+
+/**
+ * Update all shadow positions for a frame.
+ * @param {object} noa - noa engine reference
+ * @param {import('./ShadowInstances').ShadowInstances} instances - Shadow instances
+ * @returns {number[]} - List of text IDs to remove (disposed)
+ */
+function updateShadows(noa, instances) {
+    var toRemove = [];
+
+    for (var [id, data] of instances.entries()) {
+        var textMesh = data.textHandle.mesh;
+        if (!textMesh || data.textHandle._disposed) {
+            toRemove.push(id);
+            continue
+        }
+
+        // Use mesh.position (properly rebased) + stored center offset
+        // This avoids centerWorld which has timing issues after rebase
+        var pos = textMesh.position;
+        var localX = pos.x + data.centerOffsetX;
+        var localY = pos.y;
+        var localZ = pos.z + data.centerOffsetZ;
+
+        // Raycast down to find ground
+        var pickPos = [localX, localY, localZ];
+        var result = noa._localPick(pickPos, down, data.opts.maxDistance);
+
+        if (!result) {
+            data.shadow.setEnabled(false);
+            continue
+        }
+
+        // Convert ground Y from world to local
+        var localGroundY = result.position[1] - noa.worldOriginOffset[1];
+        var height = localY - localGroundY;
+
+        // Fade out when too high
+        var heightFade = 1 - Math.min(height / data.opts.maxDistance, 1);
+        if (heightFade < 0.05) {
+            data.shadow.setEnabled(false);
+            continue
+        }
+
+        // Position and scale shadow
+        var blur = data.opts.blur;
+        var scaleFactor = 0.75 + heightFade * 0.25;
+
+        data.shadow.position.x = localX;
+        data.shadow.position.y = localGroundY + 0.02 + blur * 0.01;
+        data.shadow.position.z = localZ;
+
+        data.shadow.scaling.x = data.width * (0.9 + blur * 0.6) * scaleFactor;
+        data.shadow.scaling.z = data.depth * (0.5 + blur * 0.5) * scaleFactor;
+        data.shadow.setEnabled(true);
+    }
+
+    return toRemove
+}
+
+/**
  * TextShadowManager - Simple shadow system for 3D text
  *
  * Follows the same pattern as the entity shadow component:
@@ -14322,8 +14657,6 @@ var profile_queues_hook = ((every) => {
  * - No complex coordinate conversions
  */
 
-
-var down = glVec3.fromValues(0, -1, 0);
 
 
 /**
@@ -14341,7 +14674,7 @@ var down = glVec3.fromValues(0, -1, 0);
 class TextShadowManager {
 
     /**
-     * @param {import('../index').Engine} noa
+     * @param {import('../../../index').Engine} noa
      */
     constructor(noa) {
         /** @internal */
@@ -14356,8 +14689,8 @@ class TextShadowManager {
         /** @internal - Radial opacity texture */
         this._shadowTexture = null;
 
-        /** @internal - Map of textId -> shadow data */
-        this._shadows = new Map();
+        /** @internal - Shadow instance tracking */
+        this._instances = new ShadowInstances();
 
         /** @internal - Whether manager is initialized */
         this._initialized = false;
@@ -14380,72 +14713,11 @@ class TextShadowManager {
         this._initialized = true;
 
         var scene = this.noa.rendering.getScene();
+        var resources = createShadowResources(scene, this.noa.rendering, this.defaultOptions.opacity);
 
-        // Create source disc mesh
-        this._sourceMesh = discBuilder.CreateDisc('text_shadow_source', {
-            radius: 0.5,
-            tessellation: 16,
-        }, scene);
-        this._sourceMesh.rotation.x = Math.PI / 2;
-
-        // Create shadow material
-        this._shadowMat = this.noa.rendering.makeStandardMaterial('text_shadow_mat');
-        this._shadowMat.diffuseColor.set(0, 0, 0);
-        this._shadowMat.ambientColor.set(0, 0, 0);
-        this._shadowMat.emissiveColor.set(0, 0, 0);
-        this._shadowMat.specularColor.set(0, 0, 0);
-        this._shadowMat.disableLighting = true;  // Prevent shadow reacting to scene ambient
-        this._shadowMat.backFaceCulling = false;
-        this._shadowMat.alpha = this.defaultOptions.opacity;
-
-        // Create radial texture for soft edges
-        this._shadowTexture = this._createShadowTexture(scene);
-        if (this._shadowTexture) {
-            this._shadowTexture.hasAlpha = true;
-            this._shadowMat.opacityTexture = this._shadowTexture;
-        }
-
-        this._shadowMat.freeze();
-        this._sourceMesh.material = this._shadowMat;
-
-        // Fix Babylon.js 8 SubMesh.getBoundingInfo() issue
-        this._sourceMesh.refreshBoundingInfo();
-        var bi = this._sourceMesh.getBoundingInfo();
-        if (this._sourceMesh.subMeshes && bi) {
-            this._sourceMesh.subMeshes.forEach(sm => {
-                /** @type {any} */ (sm)._boundingInfo = bi;
-            });
-        }
-
-        // Hide source mesh
-        this.noa.rendering.setMeshVisibility(this._sourceMesh, false);
-    }
-
-
-    /**
-     * @internal
-     */
-    _createShadowTexture(scene) {
-        try {
-            var size = 128;
-            var texture$1 = new dynamicTexture.DynamicTexture('text_shadow_texture', { width: size, height: size }, scene, false, texture.Texture.BILINEAR_SAMPLINGMODE);
-            var ctx = texture$1.getContext();
-            if (ctx) {
-                var half = size / 2;
-                var gradient = ctx.createRadialGradient(half, half, half * 0.2, half, half, half);
-                gradient.addColorStop(0, 'rgba(255,255,255,1)');
-                gradient.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.clearRect(0, 0, size, size);
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, size, size);
-                texture$1.update(false);
-            }
-            texture$1.wrapU = texture.Texture.CLAMP_ADDRESSMODE;
-            texture$1.wrapV = texture.Texture.CLAMP_ADDRESSMODE;
-            return texture$1
-        } catch (err) {
-            return null
-        }
+        this._sourceMesh = resources.sourceMesh;
+        this._shadowMat = resources.material;
+        this._shadowTexture = resources.texture;
     }
 
 
@@ -14455,10 +14727,8 @@ class TextShadowManager {
      */
     setDefaults(opts) {
         Object.assign(this.defaultOptions, opts);
-        if (opts.opacity !== undefined && this._shadowMat) {
-            this._shadowMat.unfreeze();
-            this._shadowMat.alpha = opts.opacity;
-            this._shadowMat.freeze();
+        if (opts.opacity !== undefined) {
+            updateMaterialOpacity(this._shadowMat, opts.opacity);
         }
     }
 
@@ -14503,8 +14773,8 @@ class TextShadowManager {
             return
         }
 
-        var metrics = this._measureTextMesh(mesh);
-        var existing = this._shadows.get(textHandle._id);
+        var metrics = measureTextMesh(mesh);
+        var existing = this._instances.get(textHandle._id);
         if (existing) {
             existing.opts = opts;
             existing.width = metrics.width;
@@ -14521,14 +14791,9 @@ class TextShadowManager {
         this.noa.rendering.addMeshToScene(shadow);
 
         // Fix Babylon.js 8 SubMesh issue
-        var bi = this._sourceMesh.getBoundingInfo();
-        if (shadow.subMeshes && bi) {
-            shadow.subMeshes.forEach(sm => {
-                /** @type {any} */ (sm)._boundingInfo = bi;
-            });
-        }
+        fixBoundingInfo(shadow);
 
-        this._shadows.set(textHandle._id, {
+        this._instances.set(textHandle._id, {
             textHandle,
             shadow,
             opts,
@@ -14540,85 +14805,13 @@ class TextShadowManager {
     }
 
 
-    /** @internal */
-    _measureTextMesh(mesh) {
-        var width = 1;
-        var depth = 0.3;
-        var centerOffsetX = 0;
-        var centerOffsetZ = 0;
-
-        mesh.computeWorldMatrix(true);
-        mesh.refreshBoundingInfo();
-        var boundingInfo = mesh.getBoundingInfo();
-        if (boundingInfo && boundingInfo.boundingBox) {
-            var bb = boundingInfo.boundingBox;
-            width = Math.max(0.5, bb.extendSize.x * 2);
-            depth = Math.max(0.2, bb.extendSize.z * 2, width * 0.15);
-
-            // Compute offset from mesh origin to visual center in SCENE coords
-            // This is constant and doesn't change with rebase
-            centerOffsetX = bb.centerWorld.x - mesh.position.x;
-            centerOffsetZ = bb.centerWorld.z - mesh.position.z;
-        }
-
-        return { width, depth, centerOffsetX, centerOffsetZ }
-    }
-
-
     /**
      * Update all shadows (call each frame)
      */
     updateShadows() {
         if (!this._initialized) return
 
-        var toRemove = [];
-
-        for (var [id, data] of this._shadows) {
-            var textMesh = data.textHandle.mesh;
-            if (!textMesh || data.textHandle._disposed) {
-                toRemove.push(id);
-                continue
-            }
-
-            // Use mesh.position (properly rebased) + stored center offset
-            // This avoids centerWorld which has timing issues after rebase
-            var pos = textMesh.position;
-            var localX = pos.x + data.centerOffsetX;
-            var localY = pos.y;
-            var localZ = pos.z + data.centerOffsetZ;
-
-            // Raycast down to find ground
-            var pickPos = [localX, localY, localZ];
-            var result = this.noa._localPick(pickPos, down, data.opts.maxDistance);
-
-            if (!result) {
-                data.shadow.setEnabled(false);
-                continue
-            }
-
-            // Convert ground Y from world to local
-            var localGroundY = result.position[1] - this.noa.worldOriginOffset[1];
-            var height = localY - localGroundY;
-
-            // Fade out when too high
-            var heightFade = 1 - Math.min(height / data.opts.maxDistance, 1);
-            if (heightFade < 0.05) {
-                data.shadow.setEnabled(false);
-                continue
-            }
-
-            // Position and scale shadow
-            var blur = data.opts.blur;
-            var scaleFactor = 0.75 + heightFade * 0.25;
-
-            data.shadow.position.x = localX;
-            data.shadow.position.y = localGroundY + 0.02 + blur * 0.01;
-            data.shadow.position.z = localZ;
-
-            data.shadow.scaling.x = data.width * (0.9 + blur * 0.6) * scaleFactor;
-            data.shadow.scaling.z = data.depth * (0.5 + blur * 0.5) * scaleFactor;
-            data.shadow.setEnabled(true);
-        }
+        var toRemove = updateShadows(this.noa, this._instances);
 
         // Cleanup disposed texts
         for (var i = 0; i < toRemove.length; i++) {
@@ -14632,14 +14825,14 @@ class TextShadowManager {
      * @param {number} textId
      */
     removeShadows(textId) {
-        var data = this._shadows.get(textId);
+        var data = this._instances.get(textId);
         if (!data) return
 
         if (data.shadow) {
             this.noa.rendering.removeMeshFromScene(data.shadow);
             data.shadow.dispose();
         }
-        this._shadows.delete(textId);
+        this._instances.delete(textId);
     }
 
 
@@ -14649,7 +14842,7 @@ class TextShadowManager {
      * @returns {boolean}
      */
     hasShadows(textId) {
-        return this._shadows.has(textId)
+        return this._instances.has(textId)
     }
 
 
@@ -14668,26 +14861,444 @@ class TextShadowManager {
      * Dispose all shadows and cleanup
      */
     dispose() {
-        for (var id of this._shadows.keys()) {
+        for (var id of this._instances.keys()) {
             this.removeShadows(id);
         }
-        this._shadows.clear();
+        this._instances.clear();
 
-        if (this._sourceMesh) {
-            this.noa.rendering.removeMeshFromScene(this._sourceMesh);
-            this._sourceMesh.dispose();
-            this._sourceMesh = null;
-        }
-        if (this._shadowMat) {
-            this._shadowMat.dispose();
-            this._shadowMat = null;
-        }
-        if (this._shadowTexture) {
-            this._shadowTexture.dispose();
-            this._shadowTexture = null;
-        }
+        disposeShadowResources(this.noa.rendering, this._sourceMesh, this._shadowMat, this._shadowTexture);
+        this._sourceMesh = null;
+        this._shadowMat = null;
+        this._shadowTexture = null;
         this._initialized = false;
     }
+}
+
+/**
+ * Light direction presets for camera-relative text lighting.
+ * Azimuth: horizontal offset from camera forward (degrees)
+ * Elevation: vertical offset from horizontal (degrees, negative = from above)
+ */
+
+var PRESETS = {
+    'above-front': { azimuth: 0, elevation: -45 },      // Classic readability
+    'headlamp': { azimuth: 0, elevation: 0 },           // From camera position
+    'above-left': { azimuth: -45, elevation: -45 },     // Dramatic left shadows
+    'above-right': { azimuth: 45, elevation: -45 },     // Dramatic right shadows
+};
+
+/**
+ * Get available preset names including 'custom'
+ * @returns {string[]}
+ */
+function getPresetNames() {
+    return [...Object.keys(PRESETS), 'custom']
+}
+
+/**
+ * Validate and normalize a preset name.
+ * @param {string} preset - Preset name to validate
+ * @returns {string} - Valid preset name (defaults to 'above-front' if invalid)
+ */
+function validatePreset(preset) {
+    if (preset === 'custom') return preset
+    if (PRESETS[preset]) return preset
+    console.warn('[noa.text] Unknown preset:', preset, '- using above-front');
+    return 'above-front'
+}
+
+/**
+ * Get offsets for a preset or custom values.
+ * @param {string} preset - Current preset name
+ * @param {number} customAzimuth - Custom azimuth value
+ * @param {number} customElevation - Custom elevation value
+ * @returns {{azimuth: number, elevation: number}}
+ */
+function getOffsets(preset, customAzimuth, customElevation) {
+    if (preset === 'custom') {
+        return { azimuth: customAzimuth, elevation: customElevation }
+    }
+    return PRESETS[preset] || PRESETS['above-front']
+}
+
+/**
+ * Factory for creating and configuring text lighting.
+ */
+
+/**
+ * @typedef {object} LightConfig
+ * @property {number} intensity - Light intensity
+ * @property {Color3} diffuse - Diffuse color
+ * @property {Color3} specular - Specular color
+ * @property {number} ambientIntensity - Ambient light intensity
+ * @property {Color3} ambientColor - Ambient light color
+ */
+
+/**
+ * @typedef {object} CreatedLights
+ * @property {DirectionalLight} textLight - Main directional light
+ * @property {HemisphericLight} textAmbient - Ambient fill light
+ */
+
+/**
+ * Create the text lighting setup.
+ * @param {object} scene - Babylon scene
+ * @param {LightConfig} config - Light configuration
+ * @returns {CreatedLights}
+ */
+function createLights(scene, config) {
+    // Create directional text light (camera-relative)
+    var textLight = new directionalLight.DirectionalLight('textLight', new math_vector.Vector3(0, -1, 0.5), scene);
+    textLight.intensity = config.intensity;
+    textLight.diffuse = config.diffuse.clone();
+    textLight.specular = config.specular.clone();
+    // Initially, no meshes are included (empty array means light affects nothing)
+    textLight.includedOnlyMeshes = [];
+
+    // Create text-specific ambient/fill light
+    var textAmbient = new hemisphericLight.HemisphericLight('textAmbient', new math_vector.Vector3(0, 1, 0), scene);
+    textAmbient.intensity = config.ambientIntensity;
+    textAmbient.diffuse = config.ambientColor.clone();
+    textAmbient.groundColor = new math_color.Color3(0.1, 0.1, 0.1);
+    textAmbient.specular = new math_color.Color3(0, 0, 0);
+    textAmbient.includedOnlyMeshes = [];
+
+    return { textLight, textAmbient }
+}
+
+/**
+ * Dispose lights and clean up.
+ * @param {DirectionalLight|null} textLight
+ * @param {HemisphericLight|null} textAmbient
+ */
+function disposeLights(textLight, textAmbient) {
+    if (textLight) {
+        textLight.dispose();
+    }
+    if (textAmbient) {
+        textAmbient.dispose();
+    }
+}
+
+/**
+ * Add mesh to light's includedOnlyMeshes array if not already present.
+ * @param {object} light - Babylon light
+ * @param {object} mesh - Babylon mesh
+ */
+function addMeshToLight(light, mesh) {
+    if (!light || !mesh || !light.includedOnlyMeshes) return
+    if (light.includedOnlyMeshes.indexOf(mesh) === -1) {
+        light.includedOnlyMeshes.push(mesh);
+    }
+}
+
+/**
+ * Remove mesh from light's includedOnlyMeshes array.
+ * @param {object} light - Babylon light
+ * @param {object} mesh - Babylon mesh
+ */
+function removeMeshFromLight(light, mesh) {
+    if (!light || !mesh || !light.includedOnlyMeshes) return
+    var idx = light.includedOnlyMeshes.indexOf(mesh);
+    if (idx >= 0) {
+        light.includedOnlyMeshes.splice(idx, 1);
+    }
+}
+
+/**
+ * Registry for tracking text meshes and their LOD state.
+ * Provides efficient mesh management for the lighting system.
+ */
+
+class MeshRegistry {
+    constructor() {
+        /** @type {Set<import('@babylonjs/core').Mesh>} */
+        this._allMeshes = new Set();
+        /** @type {WeakMap<import('@babylonjs/core').Mesh, boolean>} */
+        this._lodState = new WeakMap();
+    }
+
+    /**
+     * Check if mesh is registered.
+     * @param {object} mesh
+     * @returns {boolean}
+     */
+    has(mesh) {
+        return this._allMeshes.has(mesh)
+    }
+
+    /**
+     * Add a mesh to the registry.
+     * @param {object} mesh
+     */
+    add(mesh) {
+        if (mesh) {
+            this._allMeshes.add(mesh);
+        }
+    }
+
+    /**
+     * Remove a mesh from the registry.
+     * @param {object} mesh
+     */
+    remove(mesh) {
+        if (mesh) {
+            this._allMeshes.delete(mesh);
+            this._lodState.delete(mesh);
+        }
+    }
+
+    /**
+     * Get the LOD state for a mesh (true = using text light).
+     * @param {object} mesh
+     * @returns {boolean}
+     */
+    getLODState(mesh) {
+        return this._lodState.get(mesh) || false
+    }
+
+    /**
+     * Set the LOD state for a mesh.
+     * @param {object} mesh
+     * @param {boolean} usingTextLight
+     */
+    setLODState(mesh, usingTextLight) {
+        this._lodState.set(mesh, usingTextLight);
+    }
+
+    /**
+     * Get iterator for all meshes.
+     * @returns {IterableIterator<object>}
+     */
+    [Symbol.iterator]() {
+        return this._allMeshes[Symbol.iterator]()
+    }
+
+    /**
+     * Get the number of registered meshes.
+     * @returns {number}
+     */
+    get size() {
+        return this._allMeshes.size
+    }
+
+    /**
+     * Clear all meshes from the registry.
+     */
+    clear() {
+        this._allMeshes.clear();
+    }
+
+    /**
+     * Remove disposed meshes from the registry.
+     * Returns list of removed meshes.
+     * @returns {object[]}
+     */
+    pruneDisposed() {
+        var removed = [];
+        for (var mesh of this._allMeshes) {
+            if (mesh.isDisposed && mesh.isDisposed()) {
+                removed.push(mesh);
+            }
+        }
+        for (var m of removed) {
+            this._allMeshes.delete(m);
+        }
+        return removed
+    }
+}
+
+/**
+ * Manages scene light isolation for text meshes.
+ * Ensures new lights added to the scene don't affect text meshes using camera-relative lighting.
+ */
+
+/**
+ * Register an observer for new scene lights.
+ * @param {object} scene - Babylon scene
+ * @param {Function} onNewLight - Callback for new lights
+ * @returns {object} Observer reference for cleanup
+ */
+function registerSceneLightObserver(scene, onNewLight) {
+    if (!scene) return null
+    return scene.onNewLightAddedObservable.add(onNewLight)
+}
+
+/**
+ * Unregister the scene light observer.
+ * @param {object} scene - Babylon scene
+ * @param {object} observer - Observer reference
+ */
+function unregisterSceneLightObserver(scene, observer) {
+    if (scene && observer) {
+        scene.onNewLightAddedObservable.remove(observer);
+    }
+}
+
+/**
+ * Check if a light should be ignored for isolation purposes.
+ * @param {object} light - Babylon light
+ * @param {object} textLight - Text directional light
+ * @param {object} textAmbient - Text ambient light
+ * @returns {boolean}
+ */
+function shouldIgnoreLight(light, textLight, textAmbient) {
+    if (!light) return true
+    if (light === textLight) return true
+    if (light === textAmbient) return true
+    if (light.name === 'characterKey') return true
+    return false
+}
+
+/**
+ * Exclude a mesh from a light.
+ * @param {object} light - Babylon light
+ * @param {object} mesh - Babylon mesh
+ * @param {object} textLight - Text light (to skip)
+ * @param {object} textAmbient - Text ambient (to skip)
+ */
+function excludeMeshFromLight(light, mesh, textLight, textAmbient) {
+    if (!light || !mesh) return
+    if (shouldIgnoreLight(light, textLight, textAmbient)) return
+
+    if (!light.excludedMeshes) {
+        light.excludedMeshes = [];
+    }
+    if (light.excludedMeshes.indexOf(mesh) === -1) {
+        light.excludedMeshes.push(mesh);
+    }
+}
+
+/**
+ * Include a mesh in a light (remove from excludedMeshes).
+ * @param {object} light - Babylon light
+ * @param {object} mesh - Babylon mesh
+ * @param {object} textLight - Text light (to skip)
+ * @param {object} textAmbient - Text ambient (to skip)
+ */
+function includeMeshInLight(light, mesh, textLight, textAmbient) {
+    if (!light || !mesh) return
+    if (shouldIgnoreLight(light, textLight, textAmbient)) return
+
+    if (light.excludedMeshes) {
+        var idx = light.excludedMeshes.indexOf(mesh);
+        if (idx >= 0) {
+            light.excludedMeshes.splice(idx, 1);
+        }
+    }
+}
+
+/**
+ * Exclude mesh from all world lights in a scene.
+ * @param {object} scene - Babylon scene
+ * @param {object} mesh - Mesh to exclude
+ * @param {object} textLight - Text light (to skip)
+ * @param {object} textAmbient - Text ambient (to skip)
+ */
+function excludeMeshFromAllWorldLights(scene, mesh, textLight, textAmbient) {
+    if (!scene) return
+    for (var light of scene.lights) {
+        excludeMeshFromLight(light, mesh, textLight, textAmbient);
+    }
+}
+
+/**
+ * Include mesh in all world lights in a scene.
+ * @param {object} scene - Babylon scene
+ * @param {object} mesh - Mesh to include
+ * @param {object} textLight - Text light (to skip)
+ * @param {object} textAmbient - Text ambient (to skip)
+ */
+function includeMeshInAllWorldLights(scene, mesh, textLight, textAmbient) {
+    if (!scene) return
+    for (var light of scene.lights) {
+        includeMeshInLight(light, mesh, textLight, textAmbient);
+    }
+}
+
+/**
+ * Camera-relative direction calculations for text lighting.
+ * Handles azimuth/elevation rotation math with reusable vectors.
+ */
+
+var DEG_TO_RAD = Math.PI / 180;
+
+// Reusable vectors for calculations (avoid per-frame allocations)
+var _tempForward = new math_vector.Vector3();
+var _tempRight = new math_vector.Vector3();
+var _tempLightDir = new math_vector.Vector3();
+var _tempQuat = new math_vector.Quaternion();
+
+/**
+ * Update light direction based on camera orientation and offset angles.
+ * @param {object} light - Babylon DirectionalLight
+ * @param {object} camera - noa camera instance
+ * @param {number} azimuth - Horizontal offset in degrees
+ * @param {number} elevation - Vertical offset in degrees
+ */
+function updateLightDirection(light, camera, azimuth, elevation) {
+    if (!light || !camera) return
+
+    // Get camera forward direction (vec3 array)
+    var camDir = camera.getDirection();
+    _tempForward.copyFromFloats(camDir[0], camDir[1], camDir[2]);
+
+    var azRad = azimuth * DEG_TO_RAD;
+    var elRad = elevation * DEG_TO_RAD;
+
+    // Calculate right vector (cross of up and forward)
+    math_vector.Vector3.CrossToRef(math_vector.Vector3.Up(), _tempForward, _tempRight);
+    _tempRight.normalize();
+
+    // Start with forward direction
+    _tempLightDir.copyFrom(_tempForward);
+
+    // Rotate by azimuth around world Y axis
+    if (azRad !== 0) {
+        math_vector.Quaternion.RotationAxisToRef(math_vector.Vector3.Up(), azRad, _tempQuat);
+        _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
+    }
+
+    // Rotate by elevation around camera's right axis
+    if (elRad !== 0) {
+        math_vector.Quaternion.RotationAxisToRef(_tempRight, elRad, _tempQuat);
+        _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
+    }
+
+    // Babylon directional lights expect direction of incoming light (camera headlamp = camera forward)
+    light.direction.copyFrom(_tempLightDir);
+}
+
+/**
+ * Calculate squared distance between camera position (array) and mesh position (Vector3).
+ * @param {number[]} camPos - Camera position [x, y, z]
+ * @param {object} meshPos - Mesh position (Vector3-like with x, y, z)
+ * @returns {number}
+ */
+function distanceSquared(camPos, meshPos) {
+    var dx = camPos[0] - meshPos.x;
+    var dy = camPos[1] - meshPos.y;
+    var dz = camPos[2] - meshPos.z;
+    return dx * dx + dy * dy + dz * dz
+}
+
+/**
+ * Namespaced logger utility for the text subsystem.
+ * Provides consistent prefix for all text-related console output.
+ */
+
+const PREFIX = '[noa.text]';
+
+function log(...args) {
+    console.log(PREFIX, ...args);
+}
+
+function warn(...args) {
+    console.warn(PREFIX, ...args);
+}
+
+function error(...args) {
+    console.error(PREFIX, ...args);
 }
 
 /**
@@ -14698,22 +15309,6 @@ class TextShadowManager {
  * Critical for dyslexic accessibility.
  */
 
-
-// Light direction presets (azimuth, elevation relative to camera forward)
-const PRESETS = {
-    'above-front': { azimuth: 0, elevation: -45 },      // Classic readability
-    'headlamp': { azimuth: 0, elevation: 0 },           // From camera position
-    'above-left': { azimuth: -45, elevation: -45 },     // Dramatic left shadows
-    'above-right': { azimuth: 45, elevation: -45 },     // Dramatic right shadows
-};
-
-const DEG_TO_RAD = Math.PI / 180;
-
-// Reusable vectors for calculations (avoid per-frame allocations)
-const _tempForward = new math_vector.Vector3();
-const _tempRight = new math_vector.Vector3();
-const _tempLightDir = new math_vector.Vector3();
-const _tempQuat = new math_vector.Quaternion();
 
 
 /**
@@ -14728,7 +15323,7 @@ const _tempQuat = new math_vector.Quaternion();
 class TextLighting {
 
     /**
-     * @param {import('../index').Engine} noa - The noa engine instance
+     * @param {import('../../../index').Engine} noa - The noa engine instance
      * @param {object} [opts] - Configuration options
      */
     constructor(noa, opts = {}) {
@@ -14758,28 +15353,22 @@ class TextLighting {
         this._specular = opts.specular || new math_color.Color3(0.1, 0.1, 0.1);
 
         // Scene ambient isolation - when true, text materials have ambient zeroed
-        // so scene.ambientColor has no effect on text
         this._isolateFromSceneAmbient = opts.isolateFromSceneAmbient ?? false;
 
         // Text-specific ambient light settings
         this._ambientIntensity = opts.ambientIntensity !== undefined ? opts.ambientIntensity : 0.2;
         this._ambientColor = opts.ambientColor || new math_color.Color3(1, 1, 1);
 
-        // The dedicated text light
-        /** @type {DirectionalLight|null} */
+        // Lights (created when scene ready)
+        /** @type {import('@babylonjs/core').DirectionalLight|null} */
         this._textLight = null;
-
-        // Text-specific ambient/fill light (HemisphericLight)
-        /** @type {HemisphericLight|null} */
+        /** @type {import('@babylonjs/core').HemisphericLight|null} */
         this._textAmbient = null;
 
-        // Track all text meshes and their LOD state
-        /** @type {Set<import('@babylonjs/core').Mesh>} */
-        this._allTextMeshes = new Set();
-        /** @type {WeakMap<import('@babylonjs/core').Mesh, boolean>} */
-        this._meshUsingTextLight = new WeakMap();
+        // Mesh registry
+        this._meshRegistry = new MeshRegistry();
 
-        // Track observer for scene light changes so new lights don't re-light text meshes
+        // Scene light observer
         this._sceneLightObserver = null;
 
         // Squared distances for faster comparisons
@@ -14802,36 +15391,32 @@ class TextLighting {
 
     /** @internal */
     _createLight() {
-        const scene = this.noa.rendering.getScene();
+        var scene = this.noa.rendering.getScene();
         if (!scene) return
 
-        // Create directional text light (camera-relative)
-        this._textLight = new directionalLight.DirectionalLight('textLight', new math_vector.Vector3(0, -1, 0.5), scene);
-        this._textLight.intensity = this._intensity;
-        this._textLight.diffuse = this._diffuse.clone();
-        this._textLight.specular = this._specular.clone();
+        var lights = createLights(scene, {
+            intensity: this._intensity,
+            diffuse: this._diffuse,
+            specular: this._specular,
+            ambientIntensity: this._ambientIntensity,
+            ambientColor: this._ambientColor
+        });
 
-        // Initially, no meshes are included (empty array means light affects nothing)
-        this._textLight.includedOnlyMeshes = [];
+        this._textLight = lights.textLight;
+        this._textAmbient = lights.textAmbient;
 
-        // Create text-specific ambient/fill light
-        this._textAmbient = new hemisphericLight.HemisphericLight('textAmbient', new math_vector.Vector3(0, 1, 0), scene);
-        this._textAmbient.intensity = this._ambientIntensity;
-        this._textAmbient.diffuse = this._ambientColor.clone();
-        this._textAmbient.groundColor = new math_color.Color3(0.1, 0.1, 0.1);
-        this._textAmbient.specular = new math_color.Color3(0, 0, 0);
-        this._textAmbient.includedOnlyMeshes = [];
+        // Watch for new scene lights
+        this._sceneLightObserver = registerSceneLightObserver(scene, (light) => {
+            this._handleNewSceneLight(light);
+        });
 
-        // Watch for new scene lights (ambient, dev lights, etc.) so we can keep meshes isolated
-        this._registerSceneLightObserver(scene);
-
-        console.log('[noa.text] TextLighting initialized with preset:', this._preset, 'isolateFromSceneAmbient:', this._isolateFromSceneAmbient);
+        log('TextLighting initialized with preset:', this._preset, 'isolateFromSceneAmbient:', this._isolateFromSceneAmbient);
     }
 
 
     /**
      * Get the text light (for external configuration)
-     * @returns {DirectionalLight|null}
+     * @returns {import('@babylonjs/core').DirectionalLight|null}
      */
     getLight() {
         return this._textLight
@@ -14840,14 +15425,13 @@ class TextLighting {
 
     /**
      * Enable or disable camera-relative text lighting.
-     * When disabled, text uses world lighting.
      * @param {boolean} enabled
      */
     setEnabled(enabled) {
         this._enabled = enabled;
         if (!enabled) {
             // Move all meshes to world lighting
-            for (const mesh of this._allTextMeshes) {
+            for (var mesh of this._meshRegistry) {
                 this._switchToWorldLight(mesh);
             }
         } else {
@@ -14871,11 +15455,7 @@ class TextLighting {
      * @param {'above-front' | 'headlamp' | 'above-left' | 'above-right' | 'custom'} preset
      */
     setPreset(preset) {
-        if (preset !== 'custom' && !PRESETS[preset]) {
-            console.warn('[noa.text] Unknown preset:', preset, '- using above-front');
-            preset = 'above-front';
-        }
-        this._preset = preset;
+        this._preset = validatePreset(preset);
     }
 
 
@@ -14893,7 +15473,7 @@ class TextLighting {
      * @returns {string[]}
      */
     getPresetNames() {
-        return [...Object.keys(PRESETS), 'custom']
+        return getPresetNames()
     }
 
 
@@ -14913,10 +15493,7 @@ class TextLighting {
      * @returns {{azimuth: number, elevation: number}}
      */
     getOffsets() {
-        if (this._preset === 'custom') {
-            return { azimuth: this._customAzimuth, elevation: this._customElevation }
-        }
-        return PRESETS[this._preset] || PRESETS['above-front']
+        return getOffsets(this._preset, this._customAzimuth, this._customElevation)
     }
 
 
@@ -14962,7 +15539,6 @@ class TextLighting {
 
     /**
      * Set whether text should be isolated from scene ambient color.
-     * When true, text materials have their ambient color zeroed so scene.ambientColor has no effect.
      * @param {boolean} isolated
      */
     setIsolateFromSceneAmbient(isolated) {
@@ -15002,19 +15578,18 @@ class TextLighting {
 
     /**
      * Register a text mesh with the lighting system.
-     * Called automatically by Text class when creating text.
      * @param {import('@babylonjs/core').Mesh} mesh
      */
     addTextMesh(mesh) {
-        if (!mesh || this._allTextMeshes.has(mesh)) return
+        if (!mesh || this._meshRegistry.has(mesh)) return
 
-        this._allTextMeshes.add(mesh);
+        this._meshRegistry.add(mesh);
 
         // Start with text light if enabled and within LOD distance
         if (this._enabled && this._textLight) {
-            const camPos = this.noa.camera.getPosition();
-            const meshPos = mesh.absolutePosition || mesh.position;
-            const distSq = this._distanceSquared(camPos, meshPos);
+            var camPos = this.noa.camera.getPosition();
+            var meshPos = mesh.absolutePosition || mesh.position;
+            var distSq = distanceSquared(camPos, meshPos);
 
             if (distSq < this._lodDistanceSq) {
                 this._switchToTextLight(mesh);
@@ -15027,22 +15602,15 @@ class TextLighting {
 
     /**
      * Unregister a text mesh from the lighting system.
-     * Called automatically by TextHandle.dispose().
      * @param {import('@babylonjs/core').Mesh} mesh
      */
     removeTextMesh(mesh) {
         if (!mesh) return
 
-        this._allTextMeshes.delete(mesh);
-        this._meshUsingTextLight.delete(mesh);
+        this._meshRegistry.remove(mesh);
 
         // Remove from text light's includedOnlyMeshes
-        if (this._textLight && this._textLight.includedOnlyMeshes) {
-            const idx = this._textLight.includedOnlyMeshes.indexOf(mesh);
-            if (idx >= 0) {
-                this._textLight.includedOnlyMeshes.splice(idx, 1);
-            }
-        }
+        removeMeshFromLight(this._textLight, mesh);
 
         // Re-include in main light (cleanup)
         this.noa.rendering.includeMeshInMainLight(mesh, false);
@@ -15051,13 +15619,13 @@ class TextLighting {
 
     /**
      * Per-frame update. Updates light direction and handles LOD switching.
-     * Called from Text class render observer.
      */
     update() {
         if (this._disposed || !this._textLight || !this._enabled) return
 
         // Update light direction based on camera
-        this._updateLightDirection();
+        var offsets = this.getOffsets();
+        updateLightDirection(this._textLight, this.noa.camera, offsets.azimuth, offsets.elevation);
 
         // Update LOD for all meshes
         this._updateAllMeshLOD();
@@ -15065,61 +15633,20 @@ class TextLighting {
 
 
     /** @internal */
-    _updateLightDirection() {
-        const camera = this.noa.camera;
-        if (!camera) return
-
-        // Get camera forward direction (vec3 array)
-        const camDir = camera.getDirection();
-        _tempForward.copyFromFloats(camDir[0], camDir[1], camDir[2]);
-
-        // Get offsets from preset or custom
-        const { azimuth, elevation } = this.getOffsets();
-        const azRad = azimuth * DEG_TO_RAD;
-        const elRad = elevation * DEG_TO_RAD;
-
-        // Calculate right vector (cross of up and forward)
-        math_vector.Vector3.CrossToRef(math_vector.Vector3.Up(), _tempForward, _tempRight);
-        _tempRight.normalize();
-
-        // Start with forward direction
-        _tempLightDir.copyFrom(_tempForward);
-
-        // Rotate by azimuth around world Y axis
-        if (azRad !== 0) {
-            math_vector.Quaternion.RotationAxisToRef(math_vector.Vector3.Up(), azRad, _tempQuat);
-            _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
-        }
-
-        // Rotate by elevation around camera's right axis
-        if (elRad !== 0) {
-            math_vector.Quaternion.RotationAxisToRef(_tempRight, elRad, _tempQuat);
-            _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
-        }
-
-        // Babylon directional lights expect direction of incoming light (camera headlamp = camera forward)
-        this._textLight.direction.copyFrom(_tempLightDir);
-    }
-
-
-    /** @internal */
     _updateAllMeshLOD() {
         if (!this._enabled || !this._textLight) return
 
-        const camPos = this.noa.camera.getPosition();
-        const lodSq = this._lodDistanceSq;
-        const hystSq = this._lodHysteresisSq;
+        var camPos = this.noa.camera.getPosition();
+        var lodSq = this._lodDistanceSq;
+        var hystSq = this._lodHysteresisSq;
 
-        for (const mesh of this._allTextMeshes) {
-            // Skip disposed meshes
-            if (mesh.isDisposed && mesh.isDisposed()) {
-                this._allTextMeshes.delete(mesh);
-                continue
-            }
+        // Prune disposed meshes
+        this._meshRegistry.pruneDisposed();
 
-            const meshPos = mesh.absolutePosition || mesh.position;
-            const distSq = this._distanceSquared(camPos, meshPos);
-            const usingTextLight = this._meshUsingTextLight.get(mesh) || false;
+        for (var mesh of this._meshRegistry) {
+            var meshPos = mesh.absolutePosition || mesh.position;
+            var distSq = distanceSquared(camPos, meshPos);
+            var usingTextLight = this._meshRegistry.getLODState(mesh);
 
             if (usingTextLight) {
                 // Currently on text light - switch to world at lodDistance + hysteresis
@@ -15139,145 +15666,59 @@ class TextLighting {
     /** @internal */
     _switchToTextLight(mesh) {
         if (!this._textLight || !mesh) return
-        if (this._meshUsingTextLight.get(mesh)) return // Already using text light
+        if (this._meshRegistry.getLODState(mesh)) return // Already using text light
 
         // Add to text light's includedOnlyMeshes
-        if (this._textLight.includedOnlyMeshes.indexOf(mesh) === -1) {
-            this._textLight.includedOnlyMeshes.push(mesh);
-        }
+        addMeshToLight(this._textLight, mesh);
 
         // Add to text ambient's includedOnlyMeshes
-        if (this._textAmbient && this._textAmbient.includedOnlyMeshes.indexOf(mesh) === -1) {
-            this._textAmbient.includedOnlyMeshes.push(mesh);
-        }
+        addMeshToLight(this._textAmbient, mesh);
 
         // Exclude from main world light (sun)
         this.noa.rendering.excludeMeshFromMainLight(mesh, false);
 
-        // Exclude from all other scene lights (ambient, etc.)
-        this._excludeFromAllWorldLights(mesh);
+        // Exclude from all other scene lights
+        var scene = this.noa.rendering.getScene();
+        excludeMeshFromAllWorldLights(scene, mesh, this._textLight, this._textAmbient);
 
-        this._meshUsingTextLight.set(mesh, true);
+        this._meshRegistry.setLODState(mesh, true);
     }
 
 
     /** @internal */
     _switchToWorldLight(mesh) {
         if (!mesh) return
-        if (!this._meshUsingTextLight.get(mesh)) return // Already using world light
+        if (!this._meshRegistry.getLODState(mesh)) return // Already using world light
 
         // Remove from text light's includedOnlyMeshes
-        if (this._textLight && this._textLight.includedOnlyMeshes) {
-            const idx = this._textLight.includedOnlyMeshes.indexOf(mesh);
-            if (idx >= 0) {
-                this._textLight.includedOnlyMeshes.splice(idx, 1);
-            }
-        }
+        removeMeshFromLight(this._textLight, mesh);
 
         // Remove from text ambient's includedOnlyMeshes
-        if (this._textAmbient && this._textAmbient.includedOnlyMeshes) {
-            const idx = this._textAmbient.includedOnlyMeshes.indexOf(mesh);
-            if (idx >= 0) {
-                this._textAmbient.includedOnlyMeshes.splice(idx, 1);
-            }
-        }
+        removeMeshFromLight(this._textAmbient, mesh);
 
         // Re-include in main world light
         this.noa.rendering.includeMeshInMainLight(mesh, false);
 
         // Re-include in all other scene lights
-        this._includeInAllWorldLights(mesh);
+        var scene = this.noa.rendering.getScene();
+        includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient);
 
-        this._meshUsingTextLight.set(mesh, false);
-    }
-
-
-    /** @internal - Exclude mesh from all world lights except text lights */
-    _excludeFromAllWorldLights(mesh) {
-        const scene = this.noa.rendering.getScene();
-        if (!scene) return
-
-        for (const light of scene.lights) {
-            this._excludeLightFromMesh(light, mesh);
-        }
-    }
-
-
-    /** @internal - Re-include mesh in all world lights */
-    _includeInAllWorldLights(mesh) {
-        const scene = this.noa.rendering.getScene();
-        if (!scene) return
-
-        for (const light of scene.lights) {
-            // Skip text lights
-            if (light === this._textLight) continue
-            if (light === this._textAmbient) continue
-            // Skip character light
-            if (light.name === 'characterKey') continue
-
-            // Remove from excludedMeshes if present
-            if (light.excludedMeshes) {
-                const idx = light.excludedMeshes.indexOf(mesh);
-                if (idx >= 0) {
-                    light.excludedMeshes.splice(idx, 1);
-                }
-            }
-        }
-    }
-
-
-    /** @internal */
-    _registerSceneLightObserver(scene) {
-        if (!scene || this._sceneLightObserver) return
-
-        this._sceneLightObserver = scene.onNewLightAddedObservable.add((light) => {
-            this._handleNewSceneLight(light);
-        });
+        this._meshRegistry.setLODState(mesh, false);
     }
 
 
     /** @internal */
     _handleNewSceneLight(light) {
-        if (this._shouldIgnoreLight(light)) return
+        if (!light) return
+        if (light === this._textLight) return
+        if (light === this._textAmbient) return
+        if (light.name === 'characterKey') return
 
-        for (const mesh of this._allTextMeshes) {
-            if (this._meshUsingTextLight.get(mesh)) {
-                this._excludeLightFromMesh(light, mesh);
+        for (var mesh of this._meshRegistry) {
+            if (this._meshRegistry.getLODState(mesh)) {
+                excludeMeshFromLight(light, mesh, this._textLight, this._textAmbient);
             }
         }
-    }
-
-
-    /** @internal */
-    _shouldIgnoreLight(light) {
-        if (!light) return true
-        if (light === this._textLight) return true
-        if (light === this._textAmbient) return true
-        if (light.name === 'characterKey') return true
-        return false
-    }
-
-
-    /** @internal */
-    _excludeLightFromMesh(light, mesh) {
-        if (!light || !mesh) return
-        if (this._shouldIgnoreLight(light)) return
-
-        if (!light.excludedMeshes) {
-            light.excludedMeshes = [];
-        }
-        if (light.excludedMeshes.indexOf(mesh) === -1) {
-            light.excludedMeshes.push(mesh);
-        }
-    }
-
-
-    /** @internal - Calculate squared distance between camera position (array) and mesh position (Vector3) */
-    _distanceSquared(camPos, meshPos) {
-        const dx = camPos[0] - meshPos.x;
-        const dy = camPos[1] - meshPos.y;
-        const dz = camPos[2] - meshPos.z;
-        return dx * dx + dy * dy + dz * dz
     }
 
 
@@ -15289,38 +15730,576 @@ class TextLighting {
         this._disposed = true;
 
         // Clear all mesh registrations and re-include in world lights
-        for (const mesh of this._allTextMeshes) {
+        var scene = this.noa.rendering.getScene();
+        for (var mesh of this._meshRegistry) {
             this.noa.rendering.includeMeshInMainLight(mesh, false);
-            this._includeInAllWorldLights(mesh);
+            includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient);
         }
-        this._allTextMeshes.clear();
+        this._meshRegistry.clear();
 
         // Dispose the lights
-        if (this._textLight) {
-            this._textLight.dispose();
-            this._textLight = null;
-        }
-        if (this._textAmbient) {
-            this._textAmbient.dispose();
-            this._textAmbient = null;
-        }
+        disposeLights(this._textLight, this._textAmbient);
+        this._textLight = null;
+        this._textAmbient = null;
 
-        const scene = this.noa.rendering.getScene();
-        if (scene && this._sceneLightObserver) {
-            scene.onNewLightAddedObservable.remove(this._sceneLightObserver);
-            this._sceneLightObserver = null;
-        }
+        // Unsubscribe observer
+        unregisterSceneLightObserver(scene, this._sceneLightObserver);
+        this._sceneLightObserver = null;
 
-        console.log('[noa.text] TextLighting disposed');
+        log('TextLighting disposed');
     }
 }
 
-var defaults = {
+/**
+ * Manages initialization state and deferred callbacks for the text subsystem.
+ * Centralizes ready/failed state tracking and callback handling.
+ */
+class ReadyState {
+    constructor() {
+        /** Whether text system is available and initialized */
+        this.ready = false;
+        /** Whether initialization permanently failed (e.g., meshwriter missing) */
+        this.initFailed = false;
+        /** @internal Deferred callbacks waiting for initialization */
+        this._callbacks = [];
+    }
+
+    /**
+     * Mark the system as ready and flush callbacks.
+     */
+    setReady() {
+        this.ready = true;
+        this.initFailed = false;
+        this._flush();
+    }
+
+    /**
+     * Mark initialization as permanently failed.
+     * Clears any pending callbacks.
+     */
+    setFailed() {
+        this.ready = false;
+        this.initFailed = true;
+        this._callbacks.length = 0;
+    }
+
+    /**
+     * Reset state (for dispose).
+     */
+    reset() {
+        this.ready = false;
+        this.initFailed = false;
+        this._callbacks.length = 0;
+    }
+
+    /**
+     * Register a callback to run when ready.
+     * If already ready, fires immediately.
+     * If failed, does nothing.
+     * @param {Function} callback
+     */
+    onReady(callback) {
+        if (typeof callback !== 'function') return
+        if (this.ready) {
+            this._safeCall(callback);
+            return
+        }
+        if (this.initFailed) return
+        this._callbacks.push(callback);
+    }
+
+    /**
+     * @internal Execute all pending callbacks.
+     */
+    _flush() {
+        if (!this._callbacks.length) return
+        var callbacks = this._callbacks.slice();
+        this._callbacks.length = 0;
+        callbacks.forEach((cb) => this._safeCall(cb));
+    }
+
+    /**
+     * @internal Execute callback with error handling.
+     * @param {Function} callback
+     */
+    _safeCall(callback) {
+        try {
+            callback();
+        } catch (err) {
+            error('onReady callback error:', err);
+        }
+    }
+}
+
+/**
+ * Default options for the text subsystem.
+ */
+
+/** Constructor defaults for Text class */
+var CONSTRUCTOR_DEFAULTS = {
     defaultFont: 'Helvetica',
     scale: 1,
     enabled: true,
 };
 
+/**
+ * Default options for text creation.
+ * @param {object} constructorOpts - Options from Text constructor
+ * @returns {object} Default text creation options
+ */
+function createDefaultOptions(constructorOpts) {
+    return {
+        font: constructorOpts.defaultFont,
+        scale: constructorOpts.scale,
+        letterHeight: 1,
+        letterThickness: 0.1,
+        color: '#FFFFFF',
+        alpha: 1,
+        /** @type {'left' | 'center' | 'right'} */
+        anchor: /** @type {'center'} */ ('center'),
+        /** If true, disables lighting (only emissive color shows) */
+        emissiveOnly: false,
+        /** Material colors - diffuse affects lit surfaces, ambient affects shadowed areas */
+        diffuseColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
+        ambientColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
+        specularColor: null, // null = use meshwriter default (#000000)
+        /** If true, text material is affected by scene fog (default: true) */
+        fogEnabled: true,
+        /** Shadow options - true = use manager defaults, object = override, false = disable */
+        shadow: true,
+        /** If true, auto-derive diffuse/ambient colors for WCAG contrast when only color is provided */
+        autoContrast: true,
+        /** If true and colors are provided, adjust them to meet WCAG contrast requirements */
+        highContrast: false,
+        /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
+        contrastLevel: 4.5,
+        /** If true, use camera-relative lighting instead of world lighting (disables Fresnel) */
+        useCameraLight: true,
+    }
+}
+
+/**
+ * Handles lazy loading of the meshwriter module and font registration.
+ * Encapsulates the optional dependency pattern.
+ */
+
+/**
+ * @typedef {object} MeshWriterResult
+ * @property {object} Writer - MeshWriter instance (created via createAsync)
+ * @property {Function} registerFont - Font registration function
+ * @property {object} MeshWriter - MeshWriter module reference
+ * @property {object|null} contrastUtils - Color contrast utilities or null
+ */
+
+/**
+ * Load and initialize MeshWriter with the default font.
+ * @param {object} scene - Babylon scene
+ * @param {object} opts - Options { scale }
+ * @returns {Promise<MeshWriterResult>}
+ * @throws {Error} If meshwriter is not available
+ */
+async function loadMeshWriter(scene, opts) {
+    // Dynamic import to handle optional dependency
+    var meshwriter = await import('meshwriter');
+    var { MeshWriter, registerFont } = meshwriter;
+
+    // Import and register default font
+    try {
+        var helvetica = await import('meshwriter/fonts/helvetica');
+        registerFont('Helvetica', helvetica.default);
+    } catch (e) {
+        warn('Could not load default Helvetica font:', e);
+    }
+
+    // Create MeshWriter instance (async for Babylon 8 CSG2)
+    var Writer = await MeshWriter.createAsync(scene, { scale: opts.scale });
+
+    // Extract color contrast utilities
+    var contrastUtils = null;
+    try {
+        contrastUtils = {
+            deriveEdgeColors: meshwriter.deriveEdgeColors,
+            adjustForContrast: meshwriter.adjustForContrast,
+            hexToRgb: meshwriter.hexToRgb
+        };
+    } catch (e) {
+        warn('Color contrast utilities not available:', e.message);
+    }
+
+    log('Text subsystem initialized');
+
+    return {
+        Writer,
+        registerFont,
+        MeshWriter,
+        contrastUtils
+    }
+}
+
+/**
+ * Handle for managing a text instance.
+ * Provides methods to modify and dispose the text.
+ */
+class TextHandle {
+
+    /**
+     * @internal
+     * @param {object} config - Configuration object
+     * @param {Function} config.removeText - Callback to remove from registry
+     * @param {Function} config.removeShadows - Callback to remove shadows
+     * @param {Function} config.removeFromLighting - Callback to remove from lighting
+     * @param {Function} config.removeMeshFromScene - Callback to remove mesh from scene
+     * @param {number} id - Unique ID
+     * @param {object} textInstance - MeshWriter text instance
+     * @param {import('@babylonjs/core').Mesh} mesh - Babylon mesh
+     * @param {string} content - Text content
+     * @param {object} options - Creation options
+     */
+    constructor(config, id, textInstance, mesh, content, options) {
+        /** @internal */
+        this._config = config;
+        /** @internal */
+        this._id = id;
+        /** @internal */
+        this._textInstance = textInstance;
+        /** @internal */
+        this._disposed = false;
+        /** @internal */
+        this._billboard = false;
+        /** @internal */
+        this._options = options;
+
+        /** The Babylon mesh for this text */
+        this.mesh = mesh;
+        /** The text content */
+        this.content = content;
+    }
+
+    /**
+     * Set the text color
+     * @param {string} color - Hex color string (e.g., '#FF0000')
+     */
+    setColor(color) {
+        if (this._disposed) return
+        this._textInstance.setColor(color);
+    }
+
+    /**
+     * Set the text alpha/transparency
+     * @param {number} alpha - Transparency value (0-1)
+     */
+    setAlpha(alpha) {
+        if (this._disposed) return
+        this._textInstance.setAlpha(alpha);
+    }
+
+    /**
+     * Get the underlying Babylon mesh
+     * @returns {import('@babylonjs/core').Mesh}
+     */
+    getMesh() {
+        return this.mesh
+    }
+
+    /** Dispose this text instance and clean up resources */
+    dispose() {
+        if (this._disposed) return
+        this._disposed = true;
+
+        // Remove from text lighting BEFORE disposing mesh
+        if (this.mesh) {
+            this._config.removeFromLighting(this.mesh);
+        }
+
+        if (this._textInstance && typeof this._textInstance.dispose === 'function') {
+            try {
+                this._textInstance.dispose();
+            } catch (err) {
+                warn('Failed to dispose text instance:', err);
+            }
+        }
+
+        if (this.mesh) {
+            try {
+                this._config.removeMeshFromScene(this.mesh);
+            } catch (err) {
+                // ignore - mesh may not be registered
+            }
+            var disposed = false;
+            if (typeof this.mesh.isDisposed === 'function') {
+                try {
+                    disposed = this.mesh.isDisposed();
+                } catch (err) {
+                    disposed = false;
+                }
+            }
+            if (!disposed && typeof this.mesh.dispose === 'function') {
+                try {
+                    this.mesh.dispose();
+                } catch (err) {
+                    warn('Failed to dispose text mesh:', err);
+                }
+            }
+        }
+
+        // Remove shadows
+        this._config.removeShadows(this._id);
+
+        // Remove from registry
+        this._config.removeText(this._id);
+
+        this._textInstance = null;
+        this.mesh = null;
+    }
+}
+
+/**
+ * Handles color processing and material configuration for text meshes.
+ * Centralizes contrast color derivation and Fresnel setup.
+ */
+
+/**
+ * Process color options for contrast requirements.
+ * @param {object} opts - Text options
+ * @param {object|null} contrastUtils - Color utilities from meshwriter
+ * @returns {{emissive: string, diffuse: string|null, ambient: string|null}}
+ */
+function processContrastColors(opts, contrastUtils) {
+    var emissive = opts.color;
+    var diffuse = opts.diffuseColor;
+    var ambient = opts.ambientColor;
+
+    // If contrast utilities aren't available, pass through unchanged
+    if (!contrastUtils) {
+        return { emissive, diffuse, ambient }
+    }
+
+    // Case 1: User provided only emissive, autoContrast is enabled
+    // Auto-derive diffuse and ambient for high contrast
+    // Note: deriveEdgeColors may also return a modified emissive for the inverted approach
+    if (opts.autoContrast && !diffuse && !ambient) {
+        var derived = contrastUtils.deriveEdgeColors(emissive, opts.contrastLevel);
+        return {
+            emissive: derived.emissive || emissive,
+            diffuse: derived.diffuse,
+            ambient: derived.ambient
+        }
+    }
+
+    // Case 2: User provided colors + highContrast flag
+    // Adjust colors to meet WCAG contrast requirements
+    if (opts.highContrast && (diffuse || ambient)) {
+        var adjusted = contrastUtils.adjustForContrast({
+            emissive: emissive,
+            diffuse: diffuse || '#404040',
+            ambient: ambient || '#202020'
+        }, {
+            targetContrast: opts.contrastLevel,
+            edgeRange: 0.4,
+            faceRange: 0.1
+        });
+        return {
+            emissive: adjusted.emissive,
+            diffuse: adjusted.diffuse,
+            ambient: adjusted.ambient
+        }
+    }
+
+    // Case 3: Pass through unchanged
+    return { emissive, diffuse, ambient }
+}
+
+/**
+ * Configure material for text mesh with Fresnel and contrast settings.
+ * @param {object} material - Babylon StandardMaterial
+ * @param {object} opts - Text options
+ * @param {boolean} usingCameraLight - Whether camera-relative lighting is active
+ * @param {boolean} isolatedFromSceneAmbient - Whether to zero ambient
+ * @param {object|null} contrastUtils - Color utilities from meshwriter
+ */
+function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils) {
+    if (!material) return
+
+    // Always render both faces so 3D extrusion stays visible
+    material.backFaceCulling = false;
+
+    if (opts.autoContrast) {
+        // Use Fresnel-based emissive even when camera lighting is active.
+        // This keeps front faces bright for dyslexic readability while allowing
+        // physical lights to continue adding depth to the edges.
+        material.emissiveFresnelParameters = new fresnelParameters.FresnelParameters();
+        material.emissiveFresnelParameters.bias = 0;
+        material.emissiveFresnelParameters.power = usingCameraLight ? 2.5 : 4;
+
+        var brightColor = contrastUtils ? contrastUtils.hexToRgb(opts.color) : { r: 1, g: 0.843, b: 0 };
+        var darkColor = { r: 0.12, g: 0.1, b: 0 };
+        var brighten = usingCameraLight ? 1.15 : 1;
+
+        material.emissiveFresnelParameters.leftColor = new math_color.Color3(
+            Math.min(1, brightColor.r * brighten),
+            Math.min(1, brightColor.g * brighten),
+            Math.min(1, brightColor.b * brighten)
+        );
+        material.emissiveFresnelParameters.rightColor = new math_color.Color3(darkColor.r, darkColor.g, darkColor.b);
+        material.emissiveColor = new math_color.Color3(0, 0, 0);
+    }
+
+    if (usingCameraLight && isolatedFromSceneAmbient) {
+        material.ambientColor = new math_color.Color3(0, 0, 0);
+    }
+}
+
+/**
+ * Factory functions for creating text meshes.
+ * Encapsulates mesh creation logic separate from the Text class.
+ */
+
+/**
+ * Create a 3D text mesh at a world position.
+ * @param {object} params - Creation parameters
+ * @param {string} params.content - Text string to render
+ * @param {object} params.options - Merged options
+ * @param {object} params.Writer - MeshWriter instance
+ * @param {object} params.noa - Engine reference
+ * @param {object|null} params.textLighting - TextLighting instance
+ * @param {object} params.shadowManager - TextShadowManager instance
+ * @param {object|null} params.contrastUtils - Color contrast utilities
+ * @param {number} params.nextId - Next unique ID
+ * @param {Function} params.registerHandle - Callback to register handle
+ * @param {Function} params.removeText - Callback to remove text
+ * @returns {{handle: TextHandle, nextId: number}|null}
+ */
+function createWorldText(params) {
+    var { content, options: opts, Writer, noa, textLighting, shadowManager, contrastUtils, nextId, registerHandle, removeText } = params;
+
+    var position = opts.position || [0, 0, 0];
+
+    // Process colors for contrast requirements
+    var processedColors = processContrastColors(opts, contrastUtils);
+
+    // Build colors object for meshwriter (only include non-null values)
+    var colors = {};
+    if (processedColors.diffuse) colors.diffuse = processedColors.diffuse;
+    if (processedColors.ambient) colors.ambient = processedColors.ambient;
+    if (opts.specularColor) colors.specular = opts.specularColor;
+
+    // Create meshwriter text instance
+    var textInstance = new Writer(content, {
+        'font-family': opts.font,
+        'letter-height': opts.letterHeight,
+        'letter-thickness': opts.letterThickness,
+        'color': processedColors.emissive,
+        'alpha': opts.alpha,
+        'anchor': opts.anchor,
+        'emissive-only': opts.emissiveOnly,
+        'fog-enabled': opts.fogEnabled,
+        'colors': Object.keys(colors).length > 0 ? colors : undefined,
+        'position': { x: 0, y: 0, z: 0 }
+    });
+
+    var mesh = textInstance.getMesh();
+    if (!mesh) {
+        warn('Failed to create text mesh');
+        return null
+    }
+
+    // Determine if we're using camera-relative lighting
+    var usingCameraLight = opts.useCameraLight && textLighting && textLighting.isEnabled();
+
+    // Configure material for contrast and lighting
+    var material = textInstance.getMaterial();
+    var isolatedFromSceneAmbient = textLighting && textLighting.isIsolatedFromSceneAmbient();
+    configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils);
+
+    // Add to noa scene management
+    noa.rendering.addMeshToScene(mesh, false, position);
+
+    // Register with camera-relative lighting system
+    if (usingCameraLight && textLighting) {
+        textLighting.addTextMesh(mesh);
+    }
+
+    // Position mesh in world (convert global to local)
+    var localPos = noa.globalToLocal(position, null, []);
+    mesh.position.copyFromFloats(localPos[0], localPos[1], localPos[2]);
+
+    // Text renders in XZ plane by default, rotate to be vertical (upright)
+    mesh.rotation.x = -Math.PI / 2;
+
+    // Create handle for management
+    var id = nextId;
+    var handleConfig = {
+        removeText: removeText,
+        removeShadows: (textId) => shadowManager.removeShadows(textId),
+        removeFromLighting: (m) => {
+            if (textLighting) textLighting.removeTextMesh(m);
+        },
+        removeMeshFromScene: (m) => noa.rendering.removeMeshFromScene(m)
+    };
+    var handle = new TextHandle(handleConfig, id, textInstance, mesh, content, opts);
+    registerHandle(id, handle);
+
+    // Create shadows if enabled
+    var shadowOptions = opts.shadow;
+    if (shadowOptions !== false) {
+        var resolvedShadowOpts = (shadowOptions === true || shadowOptions === undefined)
+            ? undefined
+            : shadowOptions;
+        shadowManager.createShadowsForText(handle, resolvedShadowOpts);
+    }
+
+    return { handle, nextId: id + 1 }
+}
+
+/**
+ * Create billboarded text that always faces the camera.
+ * @param {object} params - Same as createWorldText
+ * @returns {{handle: TextHandle, nextId: number}|null}
+ */
+function createBillboardText(params) {
+    var result = createWorldText(params);
+    if (result && result.handle) {
+        result.handle._billboard = true;
+        result.handle.mesh.billboardMode = 7; // BABYLON.Mesh.BILLBOARDMODE_ALL
+    }
+    return result
+}
+
+/**
+ * Update text content (dispose old, create new).
+ * @param {TextHandle} handle - Existing text handle
+ * @param {string} newContent - New text content
+ * @param {object} noa - Engine reference
+ * @param {object} createParams - Base params for create functions (without content/options)
+ * @returns {TextHandle|null}
+ */
+function updateText(handle, newContent, noa, createParams) {
+    if (!handle || handle._disposed) return null
+
+    // Preserve position and options
+    var mesh = handle.mesh;
+    var position = [
+        mesh.position.x + noa.worldOriginOffset[0],
+        mesh.position.y + noa.worldOriginOffset[1],
+        mesh.position.z + noa.worldOriginOffset[2],
+    ];
+    var rotation = mesh.rotation.clone();
+    var wasBillboard = handle._billboard;
+    var options = Object.assign({}, handle._options, { position });
+
+    // Dispose old
+    handle.dispose();
+
+    // Create new
+    var params = Object.assign({}, createParams, { content: newContent, options });
+    var result = wasBillboard ? createBillboardText(params) : createWorldText(params);
+
+    if (result && result.handle && rotation) {
+        result.handle.mesh.rotation.copyFrom(rotation);
+    }
+
+    return result ? result.handle : null
+}
 
 /**
  * `noa.text` - 3D text rendering subsystem (optional)
@@ -15342,29 +16321,24 @@ var defaults = {
  * }
  * ```
  */
-
 class Text {
 
     /**
      * @internal
-     * @param {import('../index').Engine} noa
+     * @param {import('../../index').Engine} noa
      * @param {object} opts
      */
     constructor(noa, opts) {
-        opts = Object.assign({}, defaults, opts);
+        opts = Object.assign({}, CONSTRUCTOR_DEFAULTS, opts);
 
         /** @internal */
         this.noa = noa;
 
-        /** Whether text system is available and initialized */
-        this.ready = false;
+        /** @internal - Manages ready/failed state */
+        this._readyState = new ReadyState();
 
         /** @internal */
         this._disposed = false;
-        /** Whether initialization permanently failed (e.g., meshwriter missing) */
-        this.initFailed = false;
-        /** Deferred callbacks waiting for initialization */
-        this._readyCallbacks = [];
 
         /** @internal - MeshWriter constructor (set after init) */
         this._Writer = null;
@@ -15397,34 +16371,7 @@ class Text {
         this._textLightingOpts = opts.textLighting || {};
 
         /** Default options for text creation */
-        this.defaultOptions = {
-            font: opts.defaultFont,
-            scale: opts.scale,
-            letterHeight: 1,
-            letterThickness: 0.1,
-            color: '#FFFFFF',
-            alpha: 1,
-            /** @type {'left' | 'center' | 'right'} */
-            anchor: /** @type {'center'} */ ('center'),
-            /** If true, disables lighting (only emissive color shows) */
-            emissiveOnly: false,
-            /** Material colors - diffuse affects lit surfaces, ambient affects shadowed areas */
-            diffuseColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
-            ambientColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
-            specularColor: null, // null = use meshwriter default (#000000)
-            /** If true, text material is affected by scene fog (default: true) */
-            fogEnabled: true,
-            /** Shadow options - true = use manager defaults, object = override, false = disable */
-            shadow: true,
-            /** If true, auto-derive diffuse/ambient colors for WCAG contrast when only color is provided */
-            autoContrast: true,
-            /** If true and colors are provided, adjust them to meet WCAG contrast requirements */
-            highContrast: false,
-            /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
-            contrastLevel: 4.5,
-            /** If true, use camera-relative lighting instead of world lighting (disables Fresnel) */
-            useCameraLight: true,
-        };
+        this.defaultOptions = createDefaultOptions(opts);
 
         // Attempt lazy initialization when scene is ready
         if (opts.enabled) {
@@ -15432,6 +16379,15 @@ class Text {
         }
     }
 
+    /** Whether text system is available and initialized */
+    get ready() {
+        return this._readyState.ready
+    }
+
+    /** Whether initialization permanently failed (e.g., meshwriter missing) */
+    get initFailed() {
+        return this._readyState.initFailed
+    }
 
     /** @internal */
     _initWhenReady() {
@@ -15440,46 +16396,18 @@ class Text {
         });
     }
 
-
     /** @internal */
     async _initialize() {
         try {
-            // Dynamic import to handle optional dependency
-            const meshwriter = await import('meshwriter');
-            const { MeshWriter, registerFont } = meshwriter;
+            var scene = this.noa.rendering.getScene();
+            var result = await loadMeshWriter(scene, { scale: this.defaultOptions.scale });
 
-            // Store for font registration API
-            this._registerFont = registerFont;
-            this._MeshWriter = MeshWriter;
+            this._Writer = result.Writer;
+            this._registerFont = result.registerFont;
+            this._MeshWriter = result.MeshWriter;
+            this._contrastUtils = result.contrastUtils;
 
-            // Import and register default font
-            try {
-                const helvetica = await import('meshwriter/fonts/helvetica');
-                registerFont('Helvetica', helvetica.default);
-            } catch (e) {
-                console.warn('[noa.text] Could not load default Helvetica font:', e);
-            }
-
-            // Create MeshWriter instance (async for Babylon 8 CSG2)
-            this._Writer = await MeshWriter.createAsync(
-                this.noa.rendering.getScene(),
-                { scale: this.defaultOptions.scale }
-            );
-
-            // Import color contrast utilities from meshwriter
-            try {
-                this._contrastUtils = {
-                    deriveEdgeColors: meshwriter.deriveEdgeColors,
-                    adjustForContrast: meshwriter.adjustForContrast,
-                    hexToRgb: meshwriter.hexToRgb
-                };
-            } catch (e) {
-                console.warn('[noa.text] Color contrast utilities not available:', e.message);
-            }
-
-            this.ready = true;
-            this.initFailed = false;
-            console.log('[noa.text] Text subsystem initialized');
+            this._readyState.setReady();
 
             // Initialize shadow manager
             this._shadowManager.initialize();
@@ -15488,104 +16416,25 @@ class Text {
             this._textLighting = new TextLighting(this.noa, this._textLightingOpts);
 
             // Set up render observer for shadow updates and text lighting
-            var scene = this.noa.rendering.getScene();
             this._renderObserver = scene.onBeforeRenderObservable.add(() => {
                 this._shadowManager.updateShadows();
                 if (this._textLighting) {
                     this._textLighting.update();
                 }
             });
-
-            this._flushReadyCallbacks();
         } catch (e) {
-            console.warn('[noa.text] MeshWriter not available, text features disabled:', e.message);
-            this.ready = false;
-            this.initFailed = true;
-            this._readyCallbacks.length = 0;
+            warn('MeshWriter not available, text features disabled:', e.message);
+            this._readyState.setFailed();
         }
     }
 
-    /** @internal */
-    _flushReadyCallbacks() {
-        if (!this._readyCallbacks.length) return
-        const callbacks = this._readyCallbacks.slice();
-        this._readyCallbacks.length = 0;
-        callbacks.forEach((cb) => {
-            try {
-                cb();
-            } catch (err) {
-                console.error('[noa.text] onReady callback error:', err);
-            }
-        });
-    }
-
-    /**
-     * @internal
-     * Process color options for contrast requirements
-     * @param {object} opts - Text options
-     * @returns {{emissive: string, diffuse: string|null, ambient: string|null}}
-     */
-    _processContrastColors(opts) {
-        var emissive = opts.color;
-        var diffuse = opts.diffuseColor;
-        var ambient = opts.ambientColor;
-
-        // If contrast utilities aren't available, pass through unchanged
-        if (!this._contrastUtils) {
-            return { emissive, diffuse, ambient }
-        }
-
-        // Case 1: User provided only emissive, autoContrast is enabled
-        // Auto-derive diffuse and ambient for high contrast
-        // Note: deriveEdgeColors may also return a modified emissive for the inverted approach
-        if (opts.autoContrast && !diffuse && !ambient) {
-            var derived = this._contrastUtils.deriveEdgeColors(emissive, opts.contrastLevel);
-            return {
-                emissive: derived.emissive || emissive,
-                diffuse: derived.diffuse,
-                ambient: derived.ambient
-            }
-        }
-
-        // Case 2: User provided colors + highContrast flag
-        // Adjust colors to meet WCAG contrast requirements
-        if (opts.highContrast && (diffuse || ambient)) {
-            var adjusted = this._contrastUtils.adjustForContrast({
-                emissive: emissive,
-                diffuse: diffuse || '#404040',
-                ambient: ambient || '#202020'
-            }, {
-                targetContrast: opts.contrastLevel,
-                edgeRange: 0.4,
-                faceRange: 0.1
-            });
-            return {
-                emissive: adjusted.emissive,
-                diffuse: adjusted.diffuse,
-                ambient: adjusted.ambient
-            }
-        }
-
-        // Case 3: Pass through unchanged
-        return { emissive, diffuse, ambient }
-    }
 
     /**
      * Register a callback to run when the text system becomes ready.
      * If initialization already completed, the callback fires immediately.
      */
     onReady(callback) {
-        if (typeof callback !== 'function') return
-        if (this.ready) {
-            try {
-                callback();
-            } catch (err) {
-                console.error('[noa.text] onReady callback error:', err);
-            }
-            return
-        }
-        if (this.initFailed) return
-        this._readyCallbacks.push(callback);
+        this._readyState.onReady(callback);
     }
 
 
@@ -15604,7 +16453,7 @@ class Text {
      */
     registerFont(name, fontData) {
         if (!this._registerFont) {
-            console.warn('[noa.text] Cannot register font - text system not initialized');
+            warn('Cannot register font - text system not initialized');
             return
         }
         this._registerFont(name, fontData);
@@ -15632,108 +16481,29 @@ class Text {
     createWorldText(content, options = {}) {
         if (this.initFailed) return null
         if (!this.ready || !this._Writer) {
-            console.warn('[noa.text] Text system not ready');
+            warn('Text system not ready');
             return null
         }
 
         var opts = Object.assign({}, this.defaultOptions, options);
-        var position = opts.position || [0, 0, 0];
-
-        // Process colors for contrast requirements
-        var processedColors = this._processContrastColors(opts);
-
-        // Build colors object for meshwriter (only include non-null values)
-        var colors = {};
-        if (processedColors.diffuse) colors.diffuse = processedColors.diffuse;
-        if (processedColors.ambient) colors.ambient = processedColors.ambient;
-        if (opts.specularColor) colors.specular = opts.specularColor;
-
-        // Create meshwriter text instance
-        var textInstance = new this._Writer(content, {
-            'font-family': opts.font,
-            'letter-height': opts.letterHeight,
-            'letter-thickness': opts.letterThickness,
-            'color': processedColors.emissive,
-            'alpha': opts.alpha,
-            'anchor': opts.anchor,
-            'emissive-only': opts.emissiveOnly,
-            'fog-enabled': opts.fogEnabled,
-            'colors': Object.keys(colors).length > 0 ? colors : undefined,
-            'position': { x: 0, y: 0, z: 0 }
+        var result = createWorldText({
+            content,
+            options: opts,
+            Writer: this._Writer,
+            noa: this.noa,
+            textLighting: this._textLighting,
+            shadowManager: this._shadowManager,
+            contrastUtils: this._contrastUtils,
+            nextId: this._nextId,
+            registerHandle: (id, handle) => this._activeTexts.set(id, handle),
+            removeText: (id) => this._activeTexts.delete(id)
         });
 
-        var mesh = textInstance.getMesh();
-        if (!mesh) {
-            console.warn('[noa.text] Failed to create text mesh');
-            return null
+        if (result) {
+            this._nextId = result.nextId;
+            return result.handle
         }
-
-        // Determine if we're using camera-relative lighting
-        var usingCameraLight = opts.useCameraLight && this._textLighting && this._textLighting.isEnabled();
-
-        // Apply fresnel for front face / edge contrast (dyslexia accessibility)
-        // Skip Fresnel when using camera-relative lighting (the light provides edge contrast)
-        var material = textInstance.getMaterial();
-        if (material) {
-            // Always render both faces so 3D extrusion stays visible
-            material.backFaceCulling = false;
-
-            if (opts.autoContrast) {
-                // Use Fresnel-based emissive even when camera lighting is active.
-                // This keeps front faces bright for dyslexic readability while allowing
-                // physical lights to continue adding depth to the edges.
-                material.emissiveFresnelParameters = new fresnelParameters.FresnelParameters();
-                material.emissiveFresnelParameters.bias = 0;
-                material.emissiveFresnelParameters.power = usingCameraLight ? 2.5 : 4;
-
-                var brightColor = this._contrastUtils ? this._contrastUtils.hexToRgb(opts.color) : { r: 1, g: 0.843, b: 0 };
-                var darkColor = { r: 0.12, g: 0.1, b: 0 };
-                var brighten = usingCameraLight ? 1.15 : 1;
-
-                material.emissiveFresnelParameters.leftColor = new math_color.Color3(
-                    Math.min(1, brightColor.r * brighten),
-                    Math.min(1, brightColor.g * brighten),
-                    Math.min(1, brightColor.b * brighten)
-                );
-                material.emissiveFresnelParameters.rightColor = new math_color.Color3(darkColor.r, darkColor.g, darkColor.b);
-                material.emissiveColor = new math_color.Color3(0, 0, 0);
-            }
-
-            if (usingCameraLight && this._textLighting && this._textLighting.isIsolatedFromSceneAmbient()) {
-                material.ambientColor = new math_color.Color3(0, 0, 0);
-            }
-        }
-
-        // Add to noa scene management
-        this.noa.rendering.addMeshToScene(mesh, false, position);
-
-        // Register with camera-relative lighting system
-        if (usingCameraLight && this._textLighting) {
-            this._textLighting.addTextMesh(mesh);
-        }
-
-        // Position mesh in world (convert global to local)
-        var localPos = this.noa.globalToLocal(position, null, []);
-        mesh.position.copyFromFloats(localPos[0], localPos[1], localPos[2]);
-
-        // Text renders in XZ plane by default, rotate to be vertical (upright)
-        mesh.rotation.x = -Math.PI / 2;
-
-        // Create handle for management
-        var id = this._nextId++;
-        var handle = new TextHandle(this, id, textInstance, mesh, content, opts);
-        this._activeTexts.set(id, handle);
-
-        // Create shadows if enabled
-        var shadowOptions = opts.shadow;
-        if (shadowOptions !== false) {
-            var resolvedShadowOpts = (shadowOptions === true || shadowOptions === undefined)
-                ? undefined
-                : shadowOptions;
-            this._shadowManager.createShadowsForText(handle, resolvedShadowOpts);
-        }
-
-        return handle
+        return null
     }
 
 
@@ -15755,12 +16525,31 @@ class Text {
      * @returns {TextHandle|null}
      */
     createBillboardText(content, options = {}) {
-        var handle = this.createWorldText(content, options);
-        if (handle) {
-            handle._billboard = true;
-            handle.mesh.billboardMode = 7; // BABYLON.Mesh.BILLBOARDMODE_ALL
+        if (this.initFailed) return null
+        if (!this.ready || !this._Writer) {
+            warn('Text system not ready');
+            return null
         }
-        return handle
+
+        var opts = Object.assign({}, this.defaultOptions, options);
+        var result = createBillboardText({
+            content,
+            options: opts,
+            Writer: this._Writer,
+            noa: this.noa,
+            textLighting: this._textLighting,
+            shadowManager: this._shadowManager,
+            contrastUtils: this._contrastUtils,
+            nextId: this._nextId,
+            registerHandle: (id, handle) => this._activeTexts.set(id, handle),
+            removeText: (id) => this._activeTexts.delete(id)
+        });
+
+        if (result) {
+            this._nextId = result.nextId;
+            return result.handle
+        }
+        return null
     }
 
 
@@ -15779,38 +16568,25 @@ class Text {
      * @returns {TextHandle|null} - New handle (old is disposed)
      */
     updateText(handle, newContent) {
-        if (!handle || handle._disposed) return null
+        var createParams = {
+            Writer: this._Writer,
+            noa: this.noa,
+            textLighting: this._textLighting,
+            shadowManager: this._shadowManager,
+            contrastUtils: this._contrastUtils,
+            nextId: this._nextId,
+            registerHandle: (id, h) => this._activeTexts.set(id, h),
+            removeText: (id) => this._activeTexts.delete(id)
+        };
 
-        // Preserve position and options
-        var mesh = handle.mesh;
-        var position = [
-            mesh.position.x + this.noa.worldOriginOffset[0],
-            mesh.position.y + this.noa.worldOriginOffset[1],
-            mesh.position.z + this.noa.worldOriginOffset[2],
-        ];
-        var rotation = mesh.rotation.clone();
-        var wasBillboard = handle._billboard;
-        var options = Object.assign({}, handle._options, { position });
+        var newHandle = updateText(handle, newContent, this.noa, createParams);
 
-        // Dispose old
-        handle.dispose();
-
-        // Create new
-        var newHandle = wasBillboard
-            ? this.createBillboardText(newContent, options)
-            : this.createWorldText(newContent, options);
-
-        if (newHandle && rotation) {
-            newHandle.mesh.rotation.copyFrom(rotation);
+        // Update nextId if a new handle was created
+        if (newHandle) {
+            this._nextId++;
         }
 
         return newHandle
-    }
-
-
-    /** @internal */
-    _removeText(id) {
-        this._activeTexts.delete(id);
     }
 
 
@@ -15864,121 +16640,7 @@ class Text {
         this._Writer = null;
         this._registerFont = null;
         this._MeshWriter = null;
-        this.ready = false;
-        this.initFailed = false;
-        this._readyCallbacks.length = 0;
-    }
-}
-
-
-/**
- * Handle for managing a text instance.
- * Provides methods to modify and dispose the text.
- */
-class TextHandle {
-
-    /**
-     * @internal
-     * @param {Text} textSystem
-     * @param {number} id
-     * @param {object} textInstance
-     * @param {import('@babylonjs/core').Mesh} mesh
-     * @param {string} content
-     * @param {object} options
-     */
-    constructor(textSystem, id, textInstance, mesh, content, options) {
-        /** @internal */
-        this._textSystem = textSystem;
-        /** @internal */
-        this._id = id;
-        /** @internal */
-        this._textInstance = textInstance;
-        /** @internal */
-        this._disposed = false;
-        /** @internal */
-        this._billboard = false;
-        /** @internal */
-        this._options = options;
-
-        /** The Babylon mesh for this text */
-        this.mesh = mesh;
-        /** The text content */
-        this.content = content;
-    }
-
-    /**
-     * Set the text color
-     * @param {string} color - Hex color string (e.g., '#FF0000')
-     */
-    setColor(color) {
-        if (this._disposed) return
-        this._textInstance.setColor(color);
-    }
-
-    /**
-     * Set the text alpha/transparency
-     * @param {number} alpha - Transparency value (0-1)
-     */
-    setAlpha(alpha) {
-        if (this._disposed) return
-        this._textInstance.setAlpha(alpha);
-    }
-
-    /**
-     * Get the underlying Babylon mesh
-     * @returns {import('@babylonjs/core').Mesh}
-     */
-    getMesh() {
-        return this.mesh
-    }
-
-    /** Dispose this text instance and clean up resources */
-    dispose() {
-        if (this._disposed) return
-        this._disposed = true;
-
-        // Remove from text lighting BEFORE disposing mesh
-        if (this._textSystem._textLighting && this.mesh) {
-            this._textSystem._textLighting.removeTextMesh(this.mesh);
-        }
-
-        if (this._textInstance && typeof this._textInstance.dispose === 'function') {
-            try {
-                this._textInstance.dispose();
-            } catch (err) {
-                console.warn('[noa.text] Failed to dispose text instance:', err);
-            }
-        }
-        if (this.mesh) {
-            try {
-                this._textSystem.noa.rendering.removeMeshFromScene(this.mesh);
-            } catch (err) {
-                // ignore - mesh may not be registered
-            }
-            let disposed = false;
-            if (typeof this.mesh.isDisposed === 'function') {
-                try {
-                    disposed = this.mesh.isDisposed();
-                } catch (err) {
-                    disposed = false;
-                }
-            }
-            if (!disposed && typeof this.mesh.dispose === 'function') {
-                try {
-                    this.mesh.dispose();
-                } catch (err) {
-                    console.warn('[noa.text] Failed to dispose text mesh:', err);
-                }
-            }
-        }
-
-        // Remove shadows
-        this._textSystem._shadowManager.removeShadows(this._id);
-
-        this._textSystem._removeText(this._id);
-
-        this._textInstance = null;
-        this.mesh = null;
+        this._readyState.reset();
     }
 }
 
