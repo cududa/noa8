@@ -14779,6 +14779,9 @@ class TextLighting {
         /** @type {WeakMap<import('@babylonjs/core').Mesh, boolean>} */
         this._meshUsingTextLight = new WeakMap();
 
+        // Track observer for scene light changes so new lights don't re-light text meshes
+        this._sceneLightObserver = null;
+
         // Squared distances for faster comparisons
         this._lodDistanceSq = this._lodDistance * this._lodDistance;
         this._lodHysteresisSq = this._lodHysteresis * this._lodHysteresis;
@@ -14818,6 +14821,9 @@ class TextLighting {
         this._textAmbient.groundColor = new math_color.Color3(0.1, 0.1, 0.1);
         this._textAmbient.specular = new math_color.Color3(0, 0, 0);
         this._textAmbient.includedOnlyMeshes = [];
+
+        // Watch for new scene lights (ambient, dev lights, etc.) so we can keep meshes isolated
+        this._registerSceneLightObserver(scene);
 
         console.log('[noa.text] TextLighting initialized with preset:', this._preset, 'isolateFromSceneAmbient:', this._isolateFromSceneAmbient);
     }
@@ -15196,16 +15202,7 @@ class TextLighting {
         if (!scene) return
 
         for (const light of scene.lights) {
-            // Skip text lights
-            if (light === this._textLight) continue
-            if (light === this._textAmbient) continue
-            // Skip character light (has its own includedOnlyMeshes)
-            if (light.name === 'characterKey') continue
-
-            // Add to excludedMeshes if the light supports it
-            if (light.excludedMeshes && light.excludedMeshes.indexOf(mesh) === -1) {
-                light.excludedMeshes.push(mesh);
-            }
+            this._excludeLightFromMesh(light, mesh);
         }
     }
 
@@ -15229,6 +15226,52 @@ class TextLighting {
                     light.excludedMeshes.splice(idx, 1);
                 }
             }
+        }
+    }
+
+
+    /** @internal */
+    _registerSceneLightObserver(scene) {
+        if (!scene || this._sceneLightObserver) return
+
+        this._sceneLightObserver = scene.onNewLightAddedObservable.add((light) => {
+            this._handleNewSceneLight(light);
+        });
+    }
+
+
+    /** @internal */
+    _handleNewSceneLight(light) {
+        if (this._shouldIgnoreLight(light)) return
+
+        for (const mesh of this._allTextMeshes) {
+            if (this._meshUsingTextLight.get(mesh)) {
+                this._excludeLightFromMesh(light, mesh);
+            }
+        }
+    }
+
+
+    /** @internal */
+    _shouldIgnoreLight(light) {
+        if (!light) return true
+        if (light === this._textLight) return true
+        if (light === this._textAmbient) return true
+        if (light.name === 'characterKey') return true
+        return false
+    }
+
+
+    /** @internal */
+    _excludeLightFromMesh(light, mesh) {
+        if (!light || !mesh) return
+        if (this._shouldIgnoreLight(light)) return
+
+        if (!light.excludedMeshes) {
+            light.excludedMeshes = [];
+        }
+        if (light.excludedMeshes.indexOf(mesh) === -1) {
+            light.excludedMeshes.push(mesh);
         }
     }
 
@@ -15264,6 +15307,12 @@ class TextLighting {
         if (this._textAmbient) {
             this._textAmbient.dispose();
             this._textAmbient = null;
+        }
+
+        const scene = this.noa.rendering.getScene();
+        if (scene && this._sceneLightObserver) {
+            scene.onNewLightAddedObservable.remove(this._sceneLightObserver);
+            this._sceneLightObserver = null;
         }
 
         console.log('[noa.text] TextLighting disposed');

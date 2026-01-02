@@ -44,6 +44,7 @@ export class TextLighting {
     _allTextMeshes: Set<import("@babylonjs/core").Mesh>;
     /** @type {WeakMap<import('@babylonjs/core').Mesh, boolean>} */
     _meshUsingTextLight: WeakMap<import("@babylonjs/core").Mesh, boolean>;
+    _sceneLightObserver: any;
     _lodDistanceSq: number;
     _lodHysteresisSq: number;
     /** @internal */
@@ -165,6 +166,14 @@ export class TextLighting {
     _excludeFromAllWorldLights(mesh: any): void;
     /** @internal - Re-include mesh in all world lights */
     _includeInAllWorldLights(mesh: any): void;
+    /** @internal */
+    _registerSceneLightObserver(scene: any): void;
+    /** @internal */
+    _handleNewSceneLight(light: any): void;
+    /** @internal */
+    _shouldIgnoreLight(light: any): boolean;
+    /** @internal */
+    _excludeLightFromMesh(light: any, mesh: any): void;
     /** @internal - Calculate squared distance between camera position (array) and mesh position (Vector3) */
     _distanceSquared(camPos: any, meshPos: any): number;
     /**
