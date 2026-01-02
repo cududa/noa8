@@ -49,6 +49,12 @@ export class Text {
     _shadowManager: TextShadowManager;
     /** @internal - Render observer for shadow updates */
     _renderObserver: import("@babylonjs/core").Observer<import("@babylonjs/core").Scene>;
+    /** @internal - Color contrast utilities from meshwriter */
+    _contrastUtils: {
+        deriveEdgeColors: typeof import("meshwriter").deriveEdgeColors;
+        adjustForContrast: typeof import("meshwriter").adjustForContrast;
+        hexToRgb: typeof import("meshwriter").hexToRgb;
+    };
     /** Default options for text creation */
     defaultOptions: {
         font: any;
@@ -69,6 +75,12 @@ export class Text {
         fogEnabled: boolean;
         /** Shadow options - true = use manager defaults, object = override, false = disable */
         shadow: boolean;
+        /** If true, auto-derive diffuse/ambient colors for WCAG contrast when only color is provided */
+        autoContrast: boolean;
+        /** If true and colors are provided, adjust them to meet WCAG contrast requirements */
+        highContrast: boolean;
+        /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
+        contrastLevel: number;
     };
     /** @internal */
     _initWhenReady(): void;
@@ -76,6 +88,17 @@ export class Text {
     _initialize(): Promise<void>;
     /** @internal */
     _flushReadyCallbacks(): void;
+    /**
+     * @internal
+     * Process color options for contrast requirements
+     * @param {object} opts - Text options
+     * @returns {{emissive: string, diffuse: string|null, ambient: string|null}}
+     */
+    _processContrastColors(opts: object): {
+        emissive: string;
+        diffuse: string | null;
+        ambient: string | null;
+    };
     /**
      * Register a callback to run when the text system becomes ready.
      * If initialization already completed, the callback fires immediately.
@@ -176,7 +199,7 @@ export type TextOptions = {
      */
     letterThickness?: number;
     /**
-     * - Hex color string for emissive (default: '#FFFFFF')
+     * - Hex color string for emissive/face color (default: '#FFFFFF')
      */
     color?: string;
     /**
@@ -192,11 +215,11 @@ export type TextOptions = {
      */
     emissiveOnly?: boolean;
     /**
-     * - Hex color for diffuse/lit surfaces (default: '#404040')
+     * - Hex color for diffuse/lit surfaces (auto-derived if null and autoContrast enabled)
      */
     diffuseColor?: string;
     /**
-     * - Hex color for ambient/shadow areas (default: '#202020')
+     * - Hex color for ambient/shadow areas (auto-derived if null and autoContrast enabled)
      */
     ambientColor?: string;
     /**
@@ -227,6 +250,18 @@ export type TextOptions = {
      * - Shadow opacity 0-1 (default: 0.4)
      */
     opacity?: number;
+    /**
+     * - Auto-derive edge colors for WCAG contrast (default: true)
+     */
+    autoContrast?: boolean;
+    /**
+     * - Adjust provided colors to meet WCAG contrast (default: false)
+     */
+    highContrast?: boolean;
+    /**
+     * - Target WCAG contrast ratio, 4.5=AA, 7=AAA (default: 4.5)
+     */
+    contrastLevel?: number;
 };
 import { TextShadowManager } from './textShadow.js';
 /**

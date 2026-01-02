@@ -4,6 +4,7 @@ export { Material } from "@babylonjs/core/Materials/material";
 export { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 export { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 export { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+export { FresnelParameters } from "@babylonjs/core/Materials/fresnelParameters";
 export { Texture } from "@babylonjs/core/Materials/Textures/texture";
 export { RawTexture2DArray } from "@babylonjs/core/Materials/Textures/rawTexture2DArray";
 export { Mesh } from "@babylonjs/core/Meshes/mesh";

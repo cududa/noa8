@@ -1,6 +1,7 @@
 
 import * as vec3 from 'gl-vec3'
 import { TextShadowManager } from './textShadow.js'
+import { FresnelParameters, Color3 } from './babylonExports.js'
 
 
 var defaults = {
@@ -75,6 +76,9 @@ export class Text {
         /** @internal - Render observer for shadow updates */
         this._renderObserver = null
 
+        /** @internal - Color contrast utilities from meshwriter */
+        this._contrastUtils = null
+
         /** Default options for text creation */
         this.defaultOptions = {
             font: opts.defaultFont,
@@ -88,13 +92,19 @@ export class Text {
             /** If true, disables lighting (only emissive color shows) */
             emissiveOnly: false,
             /** Material colors - diffuse affects lit surfaces, ambient affects shadowed areas */
-            diffuseColor: null,  // null = use meshwriter default (#404040)
-            ambientColor: null,  // null = use meshwriter default (#202020)
+            diffuseColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
+            ambientColor: null,  // null = auto-derive for contrast (if autoContrast enabled)
             specularColor: null, // null = use meshwriter default (#000000)
             /** If true, text material is affected by scene fog (default: true) */
             fogEnabled: true,
             /** Shadow options - true = use manager defaults, object = override, false = disable */
             shadow: true,
+            /** If true, auto-derive diffuse/ambient colors for WCAG contrast when only color is provided */
+            autoContrast: true,
+            /** If true and colors are provided, adjust them to meet WCAG contrast requirements */
+            highContrast: false,
+            /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
+            contrastLevel: 4.5,
         }
 
         // Attempt lazy initialization when scene is ready
@@ -137,6 +147,17 @@ export class Text {
                 { scale: this.defaultOptions.scale }
             )
 
+            // Import color contrast utilities from meshwriter
+            try {
+                this._contrastUtils = {
+                    deriveEdgeColors: meshwriter.deriveEdgeColors,
+                    adjustForContrast: meshwriter.adjustForContrast,
+                    hexToRgb: meshwriter.hexToRgb
+                }
+            } catch (e) {
+                console.warn('[noa.text] Color contrast utilities not available:', e.message)
+            }
+
             this.ready = true
             this.initFailed = false
             console.log('[noa.text] Text subsystem initialized')
@@ -171,6 +192,57 @@ export class Text {
                 console.error('[noa.text] onReady callback error:', err)
             }
         })
+    }
+
+    /**
+     * @internal
+     * Process color options for contrast requirements
+     * @param {object} opts - Text options
+     * @returns {{emissive: string, diffuse: string|null, ambient: string|null}}
+     */
+    _processContrastColors(opts) {
+        var emissive = opts.color
+        var diffuse = opts.diffuseColor
+        var ambient = opts.ambientColor
+
+        // If contrast utilities aren't available, pass through unchanged
+        if (!this._contrastUtils) {
+            return { emissive, diffuse, ambient }
+        }
+
+        // Case 1: User provided only emissive, autoContrast is enabled
+        // Auto-derive diffuse and ambient for high contrast
+        // Note: deriveEdgeColors may also return a modified emissive for the inverted approach
+        if (opts.autoContrast && !diffuse && !ambient) {
+            var derived = this._contrastUtils.deriveEdgeColors(emissive, opts.contrastLevel)
+            return {
+                emissive: derived.emissive || emissive,
+                diffuse: derived.diffuse,
+                ambient: derived.ambient
+            }
+        }
+
+        // Case 2: User provided colors + highContrast flag
+        // Adjust colors to meet WCAG contrast requirements
+        if (opts.highContrast && (diffuse || ambient)) {
+            var adjusted = this._contrastUtils.adjustForContrast({
+                emissive: emissive,
+                diffuse: diffuse || '#404040',
+                ambient: ambient || '#202020'
+            }, {
+                targetContrast: opts.contrastLevel,
+                edgeRange: 0.4,
+                faceRange: 0.1
+            })
+            return {
+                emissive: adjusted.emissive,
+                diffuse: adjusted.diffuse,
+                ambient: adjusted.ambient
+            }
+        }
+
+        // Case 3: Pass through unchanged
+        return { emissive, diffuse, ambient }
     }
 
     /**
@@ -242,10 +314,13 @@ export class Text {
         var opts = Object.assign({}, this.defaultOptions, options)
         var position = opts.position || [0, 0, 0]
 
+        // Process colors for contrast requirements
+        var processedColors = this._processContrastColors(opts)
+
         // Build colors object for meshwriter (only include non-null values)
         var colors = {}
-        if (opts.diffuseColor) colors.diffuse = opts.diffuseColor
-        if (opts.ambientColor) colors.ambient = opts.ambientColor
+        if (processedColors.diffuse) colors.diffuse = processedColors.diffuse
+        if (processedColors.ambient) colors.ambient = processedColors.ambient
         if (opts.specularColor) colors.specular = opts.specularColor
 
         // Create meshwriter text instance
@@ -253,7 +328,7 @@ export class Text {
             'font-family': opts.font,
             'letter-height': opts.letterHeight,
             'letter-thickness': opts.letterThickness,
-            'color': opts.color,
+            'color': processedColors.emissive,
             'alpha': opts.alpha,
             'anchor': opts.anchor,
             'emissive-only': opts.emissiveOnly,
@@ -266,6 +341,27 @@ export class Text {
         if (!mesh) {
             console.warn('[noa.text] Failed to create text mesh')
             return null
+        }
+
+        // Apply fresnel for front face / edge contrast (dyslexia accessibility)
+        var material = textInstance.getMaterial()
+        if (material && opts.autoContrast) {
+            // Disable backface culling to see all faces
+            material.backFaceCulling = false
+
+            // Fresnel makes front-facing surfaces bright, edges dark
+            material.emissiveFresnelParameters = new FresnelParameters()
+            material.emissiveFresnelParameters.power = 4  // Higher = sharper transition
+            material.emissiveFresnelParameters.bias = 0   // No base brightness
+            // leftColor = when surface normal points toward camera (bright)
+            // rightColor = when surface at grazing angle (dark)
+            var brightColor = this._contrastUtils ? this._contrastUtils.hexToRgb(opts.color) : { r: 1, g: 0.843, b: 0 }
+            var darkColor = { r: 0.15, g: 0.12, b: 0 }
+            material.emissiveFresnelParameters.leftColor = new Color3(brightColor.r, brightColor.g, brightColor.b)
+            material.emissiveFresnelParameters.rightColor = new Color3(darkColor.r, darkColor.g, darkColor.b)
+
+            // Set base emissive to zero (fresnel will add it)
+            material.emissiveColor = new Color3(0, 0, 0)
         }
 
         // Add to noa scene management
@@ -526,12 +622,12 @@ class TextHandle {
  * @property {string} [font] - Font family name (default: 'Helvetica')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
- * @property {string} [color] - Hex color string for emissive (default: '#FFFFFF')
+ * @property {string} [color] - Hex color string for emissive/face color (default: '#FFFFFF')
  * @property {number} [alpha] - Transparency 0-1 (default: 1)
  * @property {string} [anchor] - 'left', 'center', or 'right' (default: 'center')
  * @property {boolean} [emissiveOnly] - If true, disables lighting (only emissive color shows)
- * @property {string} [diffuseColor] - Hex color for diffuse/lit surfaces (default: '#404040')
- * @property {string} [ambientColor] - Hex color for ambient/shadow areas (default: '#202020')
+ * @property {string} [diffuseColor] - Hex color for diffuse/lit surfaces (auto-derived if null and autoContrast enabled)
+ * @property {string} [ambientColor] - Hex color for ambient/shadow areas (auto-derived if null and autoContrast enabled)
  * @property {string} [specularColor] - Hex color for specular highlights (default: '#000000')
  * @property {boolean} [fogEnabled] - If true, text is affected by scene fog (default: true)
  * @property {object|boolean} [shadow] - Shadow options, true for defaults, or false to disable shadows
@@ -539,4 +635,7 @@ class TextHandle {
  * @property {number} [shadow.blur] - Shadow blur/softness 0-1 (default: 0.5)
  * @property {boolean} [shadow.merged] - Use single merged shadow vs per-letter (default: true)
  * @property {number} [shadow.opacity] - Shadow opacity 0-1 (default: 0.4)
+ * @property {boolean} [autoContrast] - Auto-derive edge colors for WCAG contrast (default: true)
+ * @property {boolean} [highContrast] - Adjust provided colors to meet WCAG contrast (default: false)
+ * @property {number} [contrastLevel] - Target WCAG contrast ratio, 4.5=AA, 7=AAA (default: 4.5)
  */

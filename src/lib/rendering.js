@@ -386,7 +386,7 @@ Rendering.prototype.render = function () {
         if (!mesh.metadata) mesh.metadata = {}
         if (mesh.metadata._noaBoundingChecked) return
         var bi = null
-        try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo() } catch (e) {}
+        try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo() } catch (e) { }
         if (!bi || !bi.boundingSphere) {
             mesh.isVisible = false
             console.log('[noa] Hidden mesh without boundingInfo:', mesh.name)
@@ -401,7 +401,7 @@ Rendering.prototype.render = function () {
             console.error('[noa] boundingSphere error! Checking all meshes and submeshes...')
             this.scene.meshes.forEach((mesh, i) => {
                 var bi = null
-                try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo() } catch (e2) {}
+                try { bi = mesh.getBoundingInfo && mesh.getBoundingInfo() } catch (e2) { }
                 if (!bi || !bi.boundingSphere) {
                     console.error('[noa] BAD MESH:', i, mesh.name, 'bi:', bi)
                 }
@@ -409,7 +409,7 @@ Rendering.prototype.render = function () {
                 if (mesh.subMeshes) {
                     mesh.subMeshes.forEach((sm, j) => {
                         var smBi = null
-                        try { smBi = sm.getBoundingInfo && sm.getBoundingInfo() } catch (e2) {}
+                        try { smBi = sm.getBoundingInfo && sm.getBoundingInfo() } catch (e2) { }
                         if (!smBi || !smBi.boundingSphere) {
                             console.error('[noa] BAD SUBMESH:', mesh.name, 'submesh', j, 'bi:', smBi)
                         }
