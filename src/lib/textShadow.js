@@ -82,6 +82,7 @@ export class TextShadowManager {
         this._shadowMat.ambientColor.set(0, 0, 0)
         this._shadowMat.emissiveColor.set(0, 0, 0)
         this._shadowMat.specularColor.set(0, 0, 0)
+        this._shadowMat.disableLighting = true  // Prevent shadow reacting to scene ambient
         this._shadowMat.backFaceCulling = false
         this._shadowMat.alpha = this.defaultOptions.opacity
 

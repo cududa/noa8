@@ -1,6 +1,7 @@
 
 import * as vec3 from 'gl-vec3'
 import { TextShadowManager } from './textShadow.js'
+import { TextLighting } from './textLighting.js'
 import { FresnelParameters, Color3 } from './babylonExports.js'
 
 
@@ -79,6 +80,12 @@ export class Text {
         /** @internal - Color contrast utilities from meshwriter */
         this._contrastUtils = null
 
+        /** @internal - Camera-relative lighting manager for text */
+        this._textLighting = null
+
+        /** @internal - TextLighting options from constructor */
+        this._textLightingOpts = opts.textLighting || {}
+
         /** Default options for text creation */
         this.defaultOptions = {
             font: opts.defaultFont,
@@ -105,6 +112,8 @@ export class Text {
             highContrast: false,
             /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
             contrastLevel: 4.5,
+            /** If true, use camera-relative lighting instead of world lighting (disables Fresnel) */
+            useCameraLight: true,
         }
 
         // Attempt lazy initialization when scene is ready
@@ -165,10 +174,16 @@ export class Text {
             // Initialize shadow manager
             this._shadowManager.initialize()
 
-            // Set up render observer for shadow updates
+            // Initialize camera-relative text lighting
+            this._textLighting = new TextLighting(this.noa, this._textLightingOpts)
+
+            // Set up render observer for shadow updates and text lighting
             var scene = this.noa.rendering.getScene()
             this._renderObserver = scene.onBeforeRenderObservable.add(() => {
                 this._shadowManager.updateShadows()
+                if (this._textLighting) {
+                    this._textLighting.update()
+                }
             })
 
             this._flushReadyCallbacks()
@@ -343,9 +358,13 @@ export class Text {
             return null
         }
 
+        // Determine if we're using camera-relative lighting
+        var usingCameraLight = opts.useCameraLight && this._textLighting && this._textLighting.isEnabled()
+
         // Apply fresnel for front face / edge contrast (dyslexia accessibility)
+        // Skip Fresnel when using camera-relative lighting (the light provides edge contrast)
         var material = textInstance.getMaterial()
-        if (material && opts.autoContrast) {
+        if (material && opts.autoContrast && !usingCameraLight) {
             // Disable backface culling to see all faces
             material.backFaceCulling = false
 
@@ -362,10 +381,23 @@ export class Text {
 
             // Set base emissive to zero (fresnel will add it)
             material.emissiveColor = new Color3(0, 0, 0)
+        } else if (material) {
+            // Camera light mode: disable backface culling for edge visibility
+            material.backFaceCulling = false
+
+            // If isolated from scene ambient, zero material ambient so scene.ambientColor has no effect
+            if (usingCameraLight && this._textLighting.isIsolatedFromSceneAmbient()) {
+                material.ambientColor = new Color3(0, 0, 0)
+            }
         }
 
         // Add to noa scene management
         this.noa.rendering.addMeshToScene(mesh, false, position)
+
+        // Register with camera-relative lighting system
+        if (usingCameraLight && this._textLighting) {
+            this._textLighting.addTextMesh(mesh)
+        }
 
         // Position mesh in world (convert global to local)
         var localPos = this.noa.globalToLocal(position, null, [])
@@ -479,6 +511,16 @@ export class Text {
     }
 
 
+    /**
+     * Get the text lighting manager for configuring camera-relative lighting.
+     * Useful for dev panel integration.
+     * @returns {TextLighting|null}
+     */
+    getTextLighting() {
+        return this._textLighting
+    }
+
+
     /** Dispose all text and cleanup */
     dispose() {
         if (this._disposed) return
@@ -499,6 +541,12 @@ export class Text {
 
         // Dispose shadow manager
         this._shadowManager.dispose()
+
+        // Dispose text lighting manager
+        if (this._textLighting) {
+            this._textLighting.dispose()
+            this._textLighting = null
+        }
 
         this._Writer = null
         this._registerFont = null
@@ -576,6 +624,11 @@ class TextHandle {
         if (this._disposed) return
         this._disposed = true
 
+        // Remove from text lighting BEFORE disposing mesh
+        if (this._textSystem._textLighting && this.mesh) {
+            this._textSystem._textLighting.removeTextMesh(this.mesh)
+        }
+
         if (this._textInstance && typeof this._textInstance.dispose === 'function') {
             try {
                 this._textInstance.dispose()
@@ -605,6 +658,7 @@ class TextHandle {
                 }
             }
         }
+
         // Remove shadows
         this._textSystem._shadowManager.removeShadows(this._id)
 
