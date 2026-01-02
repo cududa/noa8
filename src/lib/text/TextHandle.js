@@ -32,11 +32,19 @@ export class TextHandle {
         this._billboard = false
         /** @internal */
         this._options = options
+        /** @internal */
+        this._meshDisposeObserver = null
 
         /** The Babylon mesh for this text */
         this.mesh = mesh
         /** The text content */
         this.content = content
+
+        if (this.mesh && this.mesh.onDisposeObservable) {
+            this._meshDisposeObserver = this.mesh.onDisposeObservable.add(() => {
+                this._handleExternalMeshDispose()
+            })
+        }
     }
 
     /**
@@ -67,10 +75,24 @@ export class TextHandle {
 
     /** Dispose this text instance and clean up resources */
     dispose() {
+        this._disposeInternal(false)
+    }
+
+    /** @internal */
+    _handleExternalMeshDispose() {
+        this._disposeInternal(true)
+    }
+
+    /** @internal */
+    _disposeInternal(meshAlreadyDisposed) {
         if (this._disposed) return
         this._disposed = true
 
-        // Remove from text lighting BEFORE disposing mesh
+        if (this.mesh && this._meshDisposeObserver && this.mesh.onDisposeObservable) {
+            this.mesh.onDisposeObservable.remove(this._meshDisposeObserver)
+            this._meshDisposeObserver = null
+        }
+
         if (this.mesh) {
             this._config.removeFromLighting(this.mesh)
         }
@@ -89,19 +111,21 @@ export class TextHandle {
             } catch (err) {
                 // ignore - mesh may not be registered
             }
-            var disposed = false
-            if (typeof this.mesh.isDisposed === 'function') {
-                try {
-                    disposed = this.mesh.isDisposed()
-                } catch (err) {
-                    disposed = false
+            if (!meshAlreadyDisposed && typeof this.mesh.dispose === 'function') {
+                var disposed = false
+                if (typeof this.mesh.isDisposed === 'function') {
+                    try {
+                        disposed = this.mesh.isDisposed()
+                    } catch (err) {
+                        disposed = false
+                    }
                 }
-            }
-            if (!disposed && typeof this.mesh.dispose === 'function') {
-                try {
-                    this.mesh.dispose()
-                } catch (err) {
-                    warn('Failed to dispose text mesh:', err)
+                if (!disposed) {
+                    try {
+                        this.mesh.dispose()
+                    } catch (err) {
+                        warn('Failed to dispose text mesh:', err)
+                    }
                 }
             }
         }

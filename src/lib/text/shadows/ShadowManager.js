@@ -145,6 +145,12 @@ export class TextShadowManager {
         shadow.setEnabled(false)
         this.noa.rendering.addMeshToScene(shadow)
 
+        if (shadow.onDisposeObservable) {
+            shadow.onDisposeObservable.add(() => {
+                this._instances.delete(textHandle._id)
+            })
+        }
+
         // Fix Babylon.js 8 SubMesh issue
         fixBoundingInfo(shadow)
 

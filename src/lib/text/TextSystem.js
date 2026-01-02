@@ -98,16 +98,24 @@ export class Text {
 
     /** @internal */
     _initWhenReady() {
-        this.noa.rendering.onSceneReady(async () => {
+        const onSceneReady = async () => {
+            if (this._disposed || this.ready || this.initFailed) return
             await this._initialize()
-        })
+        }
+        this.noa.rendering.onSceneReady(onSceneReady)
     }
 
     /** @internal */
     async _initialize() {
+        if (this._disposed || this.ready || this.initFailed) return
         try {
             var scene = this.noa.rendering.getScene()
+            if (!scene) return
             var result = await loadMeshWriter(scene, { scale: this.defaultOptions.scale })
+
+            if (this._disposed) {
+                return
+            }
 
             this._Writer = result.Writer
             this._registerFont = result.registerFont
@@ -275,6 +283,12 @@ export class Text {
      * @returns {TextHandle|null} - New handle (old is disposed)
      */
     updateText(handle, newContent) {
+        if (this.initFailed) return null
+        if (!this.ready || !this._Writer) {
+            warn('Text system not ready')
+            return null
+        }
+
         var createParams = {
             Writer: this._Writer,
             noa: this.noa,
@@ -325,7 +339,9 @@ export class Text {
         // Remove render observer
         if (this._renderObserver) {
             var scene = this.noa.rendering.getScene()
-            scene.onBeforeRenderObservable.remove(this._renderObserver)
+            if (scene && scene.onBeforeRenderObservable) {
+                scene.onBeforeRenderObservable.remove(this._renderObserver)
+            }
             this._renderObserver = null
         }
 

@@ -14790,6 +14790,12 @@ class TextShadowManager {
         shadow.setEnabled(false);
         this.noa.rendering.addMeshToScene(shadow);
 
+        if (shadow.onDisposeObservable) {
+            shadow.onDisposeObservable.add(() => {
+                this._instances.delete(textHandle._id);
+            });
+        }
+
         // Fix Babylon.js 8 SubMesh issue
         fixBoundingInfo(shadow);
 
@@ -15367,6 +15373,7 @@ class TextLighting {
 
         // Mesh registry
         this._meshRegistry = new MeshRegistry();
+        this._meshDisposeObservers = new WeakMap();
 
         // Scene light observer
         this._sceneLightObserver = null;
@@ -15585,6 +15592,13 @@ class TextLighting {
 
         this._meshRegistry.add(mesh);
 
+        if (mesh.onDisposeObservable) {
+            var obs = mesh.onDisposeObservable.add(() => {
+                this.removeTextMesh(mesh);
+            });
+            this._meshDisposeObservers.set(mesh, obs);
+        }
+
         // Start with text light if enabled and within LOD distance
         if (this._enabled && this._textLight) {
             var camPos = this.noa.camera.getPosition();
@@ -15609,11 +15623,23 @@ class TextLighting {
 
         this._meshRegistry.remove(mesh);
 
+        var obs = this._meshDisposeObservers.get(mesh);
+        if (obs && mesh.onDisposeObservable) {
+            mesh.onDisposeObservable.remove(obs);
+        }
+        this._meshDisposeObservers.delete(mesh);
+
         // Remove from text light's includedOnlyMeshes
         removeMeshFromLight(this._textLight, mesh);
 
+        // Remove from text ambient's includedOnlyMeshes
+        removeMeshFromLight(this._textAmbient, mesh);
+
         // Re-include in main light (cleanup)
         this.noa.rendering.includeMeshInMainLight(mesh, false);
+
+        var scene = this.noa.rendering.getScene();
+        includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient);
     }
 
 
@@ -15641,7 +15667,10 @@ class TextLighting {
         var hystSq = this._lodHysteresisSq;
 
         // Prune disposed meshes
-        this._meshRegistry.pruneDisposed();
+        var pruned = this._meshRegistry.pruneDisposed();
+        for (var removedMesh of pruned) {
+            this.removeTextMesh(removedMesh);
+        }
 
         for (var mesh of this._meshRegistry) {
             var meshPos = mesh.absolutePosition || mesh.position;
@@ -15732,8 +15761,7 @@ class TextLighting {
         // Clear all mesh registrations and re-include in world lights
         var scene = this.noa.rendering.getScene();
         for (var mesh of this._meshRegistry) {
-            this.noa.rendering.includeMeshInMainLight(mesh, false);
-            includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient);
+            this.removeTextMesh(mesh);
         }
         this._meshRegistry.clear();
 
@@ -15968,11 +15996,19 @@ class TextHandle {
         this._billboard = false;
         /** @internal */
         this._options = options;
+        /** @internal */
+        this._meshDisposeObserver = null;
 
         /** The Babylon mesh for this text */
         this.mesh = mesh;
         /** The text content */
         this.content = content;
+
+        if (this.mesh && this.mesh.onDisposeObservable) {
+            this._meshDisposeObserver = this.mesh.onDisposeObservable.add(() => {
+                this._handleExternalMeshDispose();
+            });
+        }
     }
 
     /**
@@ -16003,10 +16039,24 @@ class TextHandle {
 
     /** Dispose this text instance and clean up resources */
     dispose() {
+        this._disposeInternal(false);
+    }
+
+    /** @internal */
+    _handleExternalMeshDispose() {
+        this._disposeInternal(true);
+    }
+
+    /** @internal */
+    _disposeInternal(meshAlreadyDisposed) {
         if (this._disposed) return
         this._disposed = true;
 
-        // Remove from text lighting BEFORE disposing mesh
+        if (this.mesh && this._meshDisposeObserver && this.mesh.onDisposeObservable) {
+            this.mesh.onDisposeObservable.remove(this._meshDisposeObserver);
+            this._meshDisposeObserver = null;
+        }
+
         if (this.mesh) {
             this._config.removeFromLighting(this.mesh);
         }
@@ -16025,19 +16075,21 @@ class TextHandle {
             } catch (err) {
                 // ignore - mesh may not be registered
             }
-            var disposed = false;
-            if (typeof this.mesh.isDisposed === 'function') {
-                try {
-                    disposed = this.mesh.isDisposed();
-                } catch (err) {
-                    disposed = false;
+            if (!meshAlreadyDisposed && typeof this.mesh.dispose === 'function') {
+                var disposed = false;
+                if (typeof this.mesh.isDisposed === 'function') {
+                    try {
+                        disposed = this.mesh.isDisposed();
+                    } catch (err) {
+                        disposed = false;
+                    }
                 }
-            }
-            if (!disposed && typeof this.mesh.dispose === 'function') {
-                try {
-                    this.mesh.dispose();
-                } catch (err) {
-                    warn('Failed to dispose text mesh:', err);
+                if (!disposed) {
+                    try {
+                        this.mesh.dispose();
+                    } catch (err) {
+                        warn('Failed to dispose text mesh:', err);
+                    }
                 }
             }
         }
@@ -16391,16 +16443,24 @@ class Text {
 
     /** @internal */
     _initWhenReady() {
-        this.noa.rendering.onSceneReady(async () => {
+        const onSceneReady = async () => {
+            if (this._disposed || this.ready || this.initFailed) return
             await this._initialize();
-        });
+        };
+        this.noa.rendering.onSceneReady(onSceneReady);
     }
 
     /** @internal */
     async _initialize() {
+        if (this._disposed || this.ready || this.initFailed) return
         try {
             var scene = this.noa.rendering.getScene();
+            if (!scene) return
             var result = await loadMeshWriter(scene, { scale: this.defaultOptions.scale });
+
+            if (this._disposed) {
+                return
+            }
 
             this._Writer = result.Writer;
             this._registerFont = result.registerFont;
@@ -16568,6 +16628,12 @@ class Text {
      * @returns {TextHandle|null} - New handle (old is disposed)
      */
     updateText(handle, newContent) {
+        if (this.initFailed) return null
+        if (!this.ready || !this._Writer) {
+            warn('Text system not ready');
+            return null
+        }
+
         var createParams = {
             Writer: this._Writer,
             noa: this.noa,
@@ -16618,7 +16684,9 @@ class Text {
         // Remove render observer
         if (this._renderObserver) {
             var scene = this.noa.rendering.getScene();
-            scene.onBeforeRenderObservable.remove(this._renderObserver);
+            if (scene && scene.onBeforeRenderObservable) {
+                scene.onBeforeRenderObservable.remove(this._renderObserver);
+            }
             this._renderObserver = null;
         }
 

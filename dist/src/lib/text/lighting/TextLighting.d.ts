@@ -41,6 +41,7 @@ export class TextLighting {
     /** @type {import('@babylonjs/core').HemisphericLight|null} */
     _textAmbient: import("@babylonjs/core").HemisphericLight | null;
     _meshRegistry: MeshRegistry;
+    _meshDisposeObservers: WeakMap<object, any>;
     _sceneLightObserver: any;
     _lodDistanceSq: number;
     _lodHysteresisSq: number;

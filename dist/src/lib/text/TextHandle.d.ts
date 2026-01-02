@@ -39,6 +39,8 @@ export class TextHandle {
     _billboard: boolean;
     /** @internal */
     _options: any;
+    /** @internal */
+    _meshDisposeObserver: import("@babylonjs/core").Observer<import("@babylonjs/core").Node>;
     /** The Babylon mesh for this text */
     mesh: import("@babylonjs/core").Mesh;
     /** The text content */
@@ -60,4 +62,8 @@ export class TextHandle {
     getMesh(): import("@babylonjs/core").Mesh;
     /** Dispose this text instance and clean up resources */
     dispose(): void;
+    /** @internal */
+    _handleExternalMeshDispose(): void;
+    /** @internal */
+    _disposeInternal(meshAlreadyDisposed: any): void;
 }

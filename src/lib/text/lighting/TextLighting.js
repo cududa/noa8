@@ -77,6 +77,7 @@ export class TextLighting {
 
         // Mesh registry
         this._meshRegistry = new MeshRegistry()
+        this._meshDisposeObservers = new WeakMap()
 
         // Scene light observer
         this._sceneLightObserver = null
@@ -295,6 +296,13 @@ export class TextLighting {
 
         this._meshRegistry.add(mesh)
 
+        if (mesh.onDisposeObservable) {
+            var obs = mesh.onDisposeObservable.add(() => {
+                this.removeTextMesh(mesh)
+            })
+            this._meshDisposeObservers.set(mesh, obs)
+        }
+
         // Start with text light if enabled and within LOD distance
         if (this._enabled && this._textLight) {
             var camPos = this.noa.camera.getPosition()
@@ -319,11 +327,23 @@ export class TextLighting {
 
         this._meshRegistry.remove(mesh)
 
+        var obs = this._meshDisposeObservers.get(mesh)
+        if (obs && mesh.onDisposeObservable) {
+            mesh.onDisposeObservable.remove(obs)
+        }
+        this._meshDisposeObservers.delete(mesh)
+
         // Remove from text light's includedOnlyMeshes
         removeMeshFromLight(this._textLight, mesh)
 
+        // Remove from text ambient's includedOnlyMeshes
+        removeMeshFromLight(this._textAmbient, mesh)
+
         // Re-include in main light (cleanup)
         this.noa.rendering.includeMeshInMainLight(mesh, false)
+
+        var scene = this.noa.rendering.getScene()
+        includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient)
     }
 
 
@@ -351,7 +371,10 @@ export class TextLighting {
         var hystSq = this._lodHysteresisSq
 
         // Prune disposed meshes
-        this._meshRegistry.pruneDisposed()
+        var pruned = this._meshRegistry.pruneDisposed()
+        for (var removedMesh of pruned) {
+            this.removeTextMesh(removedMesh)
+        }
 
         for (var mesh of this._meshRegistry) {
             var meshPos = mesh.absolutePosition || mesh.position
@@ -442,8 +465,7 @@ export class TextLighting {
         // Clear all mesh registrations and re-include in world lights
         var scene = this.noa.rendering.getScene()
         for (var mesh of this._meshRegistry) {
-            this.noa.rendering.includeMeshInMainLight(mesh, false)
-            includeMeshInAllWorldLights(scene, mesh, this._textLight, this._textAmbient)
+            this.removeTextMesh(mesh)
         }
         this._meshRegistry.clear()
 
