@@ -364,29 +364,32 @@ export class Text {
         // Apply fresnel for front face / edge contrast (dyslexia accessibility)
         // Skip Fresnel when using camera-relative lighting (the light provides edge contrast)
         var material = textInstance.getMaterial()
-        if (material && opts.autoContrast && !usingCameraLight) {
-            // Disable backface culling to see all faces
+        if (material) {
+            // Always render both faces so 3D extrusion stays visible
             material.backFaceCulling = false
 
-            // Fresnel makes front-facing surfaces bright, edges dark
-            material.emissiveFresnelParameters = new FresnelParameters()
-            material.emissiveFresnelParameters.power = 4  // Higher = sharper transition
-            material.emissiveFresnelParameters.bias = 0   // No base brightness
-            // leftColor = when surface normal points toward camera (bright)
-            // rightColor = when surface at grazing angle (dark)
-            var brightColor = this._contrastUtils ? this._contrastUtils.hexToRgb(opts.color) : { r: 1, g: 0.843, b: 0 }
-            var darkColor = { r: 0.15, g: 0.12, b: 0 }
-            material.emissiveFresnelParameters.leftColor = new Color3(brightColor.r, brightColor.g, brightColor.b)
-            material.emissiveFresnelParameters.rightColor = new Color3(darkColor.r, darkColor.g, darkColor.b)
+            if (opts.autoContrast) {
+                // Use Fresnel-based emissive even when camera lighting is active.
+                // This keeps front faces bright for dyslexic readability while allowing
+                // physical lights to continue adding depth to the edges.
+                material.emissiveFresnelParameters = new FresnelParameters()
+                material.emissiveFresnelParameters.bias = 0
+                material.emissiveFresnelParameters.power = usingCameraLight ? 2.5 : 4
 
-            // Set base emissive to zero (fresnel will add it)
-            material.emissiveColor = new Color3(0, 0, 0)
-        } else if (material) {
-            // Camera light mode: disable backface culling for edge visibility
-            material.backFaceCulling = false
+                var brightColor = this._contrastUtils ? this._contrastUtils.hexToRgb(opts.color) : { r: 1, g: 0.843, b: 0 }
+                var darkColor = { r: 0.12, g: 0.1, b: 0 }
+                var brighten = usingCameraLight ? 1.15 : 1
 
-            // If isolated from scene ambient, zero material ambient so scene.ambientColor has no effect
-            if (usingCameraLight && this._textLighting.isIsolatedFromSceneAmbient()) {
+                material.emissiveFresnelParameters.leftColor = new Color3(
+                    Math.min(1, brightColor.r * brighten),
+                    Math.min(1, brightColor.g * brighten),
+                    Math.min(1, brightColor.b * brighten)
+                )
+                material.emissiveFresnelParameters.rightColor = new Color3(darkColor.r, darkColor.g, darkColor.b)
+                material.emissiveColor = new Color3(0, 0, 0)
+            }
+
+            if (usingCameraLight && this._textLighting && this._textLighting.isIsolatedFromSceneAmbient()) {
                 material.ambientColor = new Color3(0, 0, 0)
             }
         }

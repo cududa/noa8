@@ -406,12 +406,8 @@ export class TextLighting {
             _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir)
         }
 
-        // Light direction points FROM light source TO object (negate for "light shining on text")
-        this._textLight.direction.copyFromFloats(
-            -_tempLightDir.x,
-            -_tempLightDir.y,
-            -_tempLightDir.z
-        )
+        // Babylon directional lights expect direction of incoming light (camera headlamp = camera forward)
+        this._textLight.direction.copyFrom(_tempLightDir)
     }
 
 
