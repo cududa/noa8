@@ -55,6 +55,10 @@ export class Text {
         adjustForContrast: typeof import("meshwriter").adjustForContrast;
         hexToRgb: typeof import("meshwriter").hexToRgb;
     };
+    /** @internal - Camera-relative lighting manager for text */
+    _textLighting: TextLighting;
+    /** @internal - TextLighting options from constructor */
+    _textLightingOpts: any;
     /** Default options for text creation */
     defaultOptions: {
         font: any;
@@ -81,6 +85,8 @@ export class Text {
         highContrast: boolean;
         /** Target WCAG contrast ratio (4.5 = AA normal, 7 = AAA) */
         contrastLevel: number;
+        /** If true, use camera-relative lighting instead of world lighting (disables Fresnel) */
+        useCameraLight: boolean;
     };
     /** @internal */
     _initWhenReady(): void;
@@ -178,6 +184,12 @@ export class Text {
      * @returns {TextShadowManager}
      */
     getShadowManager(): TextShadowManager;
+    /**
+     * Get the text lighting manager for configuring camera-relative lighting.
+     * Useful for dev panel integration.
+     * @returns {TextLighting|null}
+     */
+    getTextLighting(): TextLighting | null;
     /** Dispose all text and cleanup */
     dispose(): void;
 }
@@ -264,6 +276,7 @@ export type TextOptions = {
     contrastLevel?: number;
 };
 import { TextShadowManager } from './textShadow.js';
+import { TextLighting } from './textLighting.js';
 /**
  * Handle for managing a text instance.
  * Provides methods to modify and dispose the text.
