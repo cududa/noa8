@@ -107,10 +107,7 @@ export class TextHandle {
         if (this.mesh) {
             this._config.removeFromLighting(this.mesh)
         }
-        // Also remove face mesh from lighting
-        if (this.faceMesh) {
-            this._config.removeFromLighting(this.faceMesh)
-        }
+        // Face mesh is NOT in lighting system (it's emissive/self-lit)
 
         if (this._textInstance && typeof this._textInstance.dispose === 'function') {
             try {

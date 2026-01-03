@@ -94,26 +94,23 @@ export function createWorldText(params) {
         faceMesh.position.copyFrom(mesh.position)
         faceMesh.rotation.copyFrom(mesh.rotation)
 
-        // Small Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
-        // Positive offset moves face toward camera
-        faceMesh.position.z -= 0.01
+        // Tiny Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
+        // Negative Z moves face toward camera
+        faceMesh.position.z -= 0.001
 
         // Add face mesh to noa scene management
         var faceGlobalPos = [
             position[0],
             position[1],
-            position[2] - 0.01
+            position[2] - 0.001
         ]
         noa.rendering.addMeshToScene(faceMesh, false, faceGlobalPos)
     }
 
-    // Register with camera-relative lighting system
+    // Register rim mesh with camera-relative lighting system
+    // Face mesh is NOT added - it has disableLighting=true (emissive/self-lit)
     if (usingCameraLight && textLighting) {
         textLighting.addTextMesh(mesh)
-        // Also add face mesh to lighting system
-        if (faceMesh) {
-            textLighting.addTextMesh(faceMesh)
-        }
     }
 
     // Create handle for management
