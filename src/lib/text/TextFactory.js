@@ -95,14 +95,14 @@ export function createWorldText(params) {
         faceMesh.rotation.copyFrom(mesh.rotation)
 
         // Tiny Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
-        // Negative Z moves face toward camera
-        faceMesh.position.z -= 0.001
+        // Negative Z moves face toward camera; keep minimal to avoid visible gap
+        faceMesh.position.z -= 0.0005
 
         // Add face mesh to noa scene management
         var faceGlobalPos = [
             position[0],
             position[1],
-            position[2] - 0.001
+            position[2] - 0.0005
         ]
         noa.rendering.addMeshToScene(faceMesh, false, faceGlobalPos)
     }

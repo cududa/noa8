@@ -15549,7 +15549,6 @@ class TextLighting {
 
         // Squared distances for faster comparisons
         this._lodDistanceSq = this._lodDistance * this._lodDistance;
-        this._lodHysteresisSq = this._lodHysteresis * this._lodHysteresis;
 
         // Initialize light when scene is ready
         this._initWhenReady();
@@ -15844,8 +15843,11 @@ class TextLighting {
         if (!this._enabled || !this._textLight) return
 
         var camPos = this.noa.camera.getPosition();
-        var lodSq = this._lodDistanceSq;
-        var hystSq = this._lodHysteresisSq;
+        var lod = this._lodDistance;
+        var hyst = this._lodHysteresis;
+        var highSq = (lod + hyst) * (lod + hyst);
+        var low = Math.max(lod - hyst, 0);
+        var lowSq = low * low;
 
         // Prune disposed meshes
         var pruned = this._meshRegistry.pruneDisposed();
@@ -15859,13 +15861,13 @@ class TextLighting {
             var usingTextLight = this._meshRegistry.getLODState(mesh);
 
             if (usingTextLight) {
-                // Currently on text light - switch to world at lodDistance + hysteresis
-                if (distSq > lodSq + hystSq * 2) {
+                // Switch to world lighting beyond (lod + hysteresis)
+                if (distSq > highSq) {
                     this._switchToWorldLight(mesh);
                 }
             } else {
-                // Currently on world light - switch to text at lodDistance - hysteresis
-                if (distSq < lodSq - hystSq * 2) {
+                // Switch back to text lighting inside (lod - hysteresis)
+                if (distSq < lowSq) {
                     this._switchToTextLight(mesh);
                 }
             }
@@ -16520,14 +16522,14 @@ function createWorldText(params) {
         faceMesh.rotation.copyFrom(mesh.rotation);
 
         // Tiny Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
-        // Negative Z moves face toward camera
-        faceMesh.position.z -= 0.001;
+        // Negative Z moves face toward camera; keep minimal to avoid visible gap
+        faceMesh.position.z -= 0.0005;
 
         // Add face mesh to noa scene management
         var faceGlobalPos = [
             position[0],
             position[1],
-            position[2] - 0.001
+            position[2] - 0.0005
         ];
         noa.rendering.addMeshToScene(faceMesh, false, faceGlobalPos);
     }

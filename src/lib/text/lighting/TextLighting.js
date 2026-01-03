@@ -84,7 +84,6 @@ export class TextLighting {
 
         // Squared distances for faster comparisons
         this._lodDistanceSq = this._lodDistance * this._lodDistance
-        this._lodHysteresisSq = this._lodHysteresis * this._lodHysteresis
 
         // Initialize light when scene is ready
         this._initWhenReady()
@@ -379,8 +378,11 @@ export class TextLighting {
         if (!this._enabled || !this._textLight) return
 
         var camPos = this.noa.camera.getPosition()
-        var lodSq = this._lodDistanceSq
-        var hystSq = this._lodHysteresisSq
+        var lod = this._lodDistance
+        var hyst = this._lodHysteresis
+        var highSq = (lod + hyst) * (lod + hyst)
+        var low = Math.max(lod - hyst, 0)
+        var lowSq = low * low
 
         // Prune disposed meshes
         var pruned = this._meshRegistry.pruneDisposed()
@@ -394,13 +396,13 @@ export class TextLighting {
             var usingTextLight = this._meshRegistry.getLODState(mesh)
 
             if (usingTextLight) {
-                // Currently on text light - switch to world at lodDistance + hysteresis
-                if (distSq > lodSq + hystSq * 2) {
+                // Switch to world lighting beyond (lod + hysteresis)
+                if (distSq > highSq) {
                     this._switchToWorldLight(mesh)
                 }
             } else {
-                // Currently on world light - switch to text at lodDistance - hysteresis
-                if (distSq < lodSq - hystSq * 2) {
+                // Switch back to text lighting inside (lod - hysteresis)
+                if (distSq < lowSq) {
                     this._switchToTextLight(mesh)
                 }
             }

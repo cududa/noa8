@@ -44,7 +44,6 @@ export class TextLighting {
     _meshDisposeObservers: WeakMap<object, any>;
     _sceneLightObserver: any;
     _lodDistanceSq: number;
-    _lodHysteresisSq: number;
     /** @internal */
     _initWhenReady(): void;
     /** @internal */
