@@ -63,14 +63,17 @@ export function processContrastColors(opts, contrastUtils) {
  * @param {boolean} usingCameraLight - Whether camera-relative lighting is active
  * @param {boolean} isolatedFromSceneAmbient - Whether to zero ambient
  * @param {object|null} contrastUtils - Color utilities from meshwriter
+ * @param {{processedColors?: {emissive: string, diffuse: string|null, ambient: string|null}, hasFaceMesh?: boolean}} [extra]
  */
-export function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils) {
+export function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils, extra = {}) {
     if (!material) return
 
     // Always render both faces so 3D extrusion stays visible
     material.backFaceCulling = false
 
-    if (opts.autoContrast) {
+    var hasFaceMesh = !!extra.hasFaceMesh
+
+    if (opts.autoContrast && !hasFaceMesh) {
         // Use Fresnel-based emissive even when camera lighting is active.
         // This keeps front faces bright for dyslexic readability while allowing
         // physical lights to continue adding depth to the edges.
@@ -88,6 +91,10 @@ export function configureMaterial(material, opts, usingCameraLight, isolatedFrom
             Math.min(1, brightColor.b * brighten)
         )
         material.emissiveFresnelParameters.rightColor = new Color3(darkColor.r, darkColor.g, darkColor.b)
+        material.emissiveColor = new Color3(0, 0, 0)
+    } else if (hasFaceMesh && !opts.emissiveOnly) {
+        // With a dedicated face mesh, the rim should respond strictly to lights.
+        material.emissiveFresnelParameters = null
         material.emissiveColor = new Color3(0, 0, 0)
     }
 

@@ -15,13 +15,14 @@ export class TextHandle {
      * @param {import('@babylonjs/core').Mesh} mesh - Babylon mesh
      * @param {string} content - Text content
      * @param {object} options - Creation options
+     * @param {import('@babylonjs/core').Mesh|null} [faceMesh] - Optional emissive face mesh
      */
     constructor(config: {
         removeText: Function;
         removeShadows: Function;
         removeFromLighting: Function;
         removeMeshFromScene: Function;
-    }, id: number, textInstance: object, mesh: import("@babylonjs/core").Mesh, content: string, options: object);
+    }, id: number, textInstance: object, mesh: import("@babylonjs/core").Mesh, content: string, options: object, faceMesh?: import("@babylonjs/core").Mesh | null);
     /** @internal */
     _config: {
         removeText: Function;
@@ -43,6 +44,8 @@ export class TextHandle {
     _meshDisposeObserver: import("@babylonjs/core").Observer<import("@babylonjs/core").Node>;
     /** The Babylon mesh for this text */
     mesh: import("@babylonjs/core").Mesh;
+    /** Optional emissive face mesh (child of mesh) */
+    faceMesh: import("@babylonjs/core").Mesh;
     /** The text content */
     content: string;
     /**
@@ -60,6 +63,11 @@ export class TextHandle {
      * @returns {import('@babylonjs/core').Mesh}
      */
     getMesh(): import("@babylonjs/core").Mesh;
+    /**
+     * Get the emissive face mesh if available.
+     * @returns {import('@babylonjs/core').Mesh|null}
+     */
+    getFaceMesh(): import("@babylonjs/core").Mesh | null;
     /** Dispose this text instance and clean up resources */
     dispose(): void;
     /** @internal */

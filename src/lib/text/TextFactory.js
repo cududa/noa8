@@ -37,11 +37,13 @@ export function createWorldText(params) {
     if (opts.specularColor) colors.specular = opts.specularColor
 
     // Create meshwriter text instance
+    // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
+    // The rim material gets configured separately by configureMaterial() below.
     var textInstance = new Writer(content, {
         'font-family': opts.font,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
-        'color': processedColors.emissive,
+        'color': opts.color,
         'alpha': opts.alpha,
         'anchor': opts.anchor,
         'emissive-only': opts.emissiveOnly,
@@ -51,6 +53,10 @@ export function createWorldText(params) {
     })
 
     var mesh = textInstance.getMesh()
+    var faceMesh = (typeof textInstance.getFaceMesh === 'function')
+        ? textInstance.getFaceMesh()
+        : null
+
     if (!mesh) {
         warn('Failed to create text mesh')
         return null
@@ -62,22 +68,53 @@ export function createWorldText(params) {
     // Configure material for contrast and lighting
     var material = textInstance.getMaterial()
     var isolatedFromSceneAmbient = textLighting && textLighting.isIsolatedFromSceneAmbient()
-    configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils)
 
-    // Add to noa scene management
+    configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils, {
+        processedColors,
+        hasFaceMesh: !!faceMesh
+    })
+
+    // Add rim mesh to noa scene management
     noa.rendering.addMeshToScene(mesh, false, position)
 
-    // Register with camera-relative lighting system
-    if (usingCameraLight && textLighting) {
-        textLighting.addTextMesh(mesh)
-    }
-
-    // Position mesh in world (convert global to local)
+    // Position rim mesh in world (convert global to local)
     var localPos = noa.globalToLocal(position, null, [])
     mesh.position.copyFromFloats(localPos[0], localPos[1], localPos[2])
 
     // Text renders in XZ plane by default, rotate to be vertical (upright)
     mesh.rotation.x = -Math.PI / 2
+
+    // Handle face mesh - unparent and add to scene separately
+    // Face mesh must be in noa's scene management to render properly
+    if (faceMesh) {
+        // Unparent face mesh (meshwriter parents it to rim by default)
+        faceMesh.parent = null
+
+        // Position face mesh same as rim
+        faceMesh.position.copyFrom(mesh.position)
+        faceMesh.rotation.copyFrom(mesh.rotation)
+
+        // Small Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
+        // Positive offset moves face toward camera
+        faceMesh.position.z -= 0.01
+
+        // Add face mesh to noa scene management
+        var faceGlobalPos = [
+            position[0],
+            position[1],
+            position[2] - 0.01
+        ]
+        noa.rendering.addMeshToScene(faceMesh, false, faceGlobalPos)
+    }
+
+    // Register with camera-relative lighting system
+    if (usingCameraLight && textLighting) {
+        textLighting.addTextMesh(mesh)
+        // Also add face mesh to lighting system
+        if (faceMesh) {
+            textLighting.addTextMesh(faceMesh)
+        }
+    }
 
     // Create handle for management
     var id = nextId
@@ -89,7 +126,7 @@ export function createWorldText(params) {
         },
         removeMeshFromScene: (m) => noa.rendering.removeMeshFromScene(m)
     }
-    var handle = new TextHandle(handleConfig, id, textInstance, mesh, content, opts)
+    var handle = new TextHandle(handleConfig, id, textInstance, mesh, content, opts, faceMesh)
     registerHandle(id, handle)
 
     // Create shadows if enabled

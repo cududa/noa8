@@ -20,5 +20,13 @@ export function processContrastColors(opts: object, contrastUtils: object | null
  * @param {boolean} usingCameraLight - Whether camera-relative lighting is active
  * @param {boolean} isolatedFromSceneAmbient - Whether to zero ambient
  * @param {object|null} contrastUtils - Color utilities from meshwriter
+ * @param {{processedColors?: {emissive: string, diffuse: string|null, ambient: string|null}, hasFaceMesh?: boolean}} [extra]
  */
-export function configureMaterial(material: object, opts: object, usingCameraLight: boolean, isolatedFromSceneAmbient: boolean, contrastUtils: object | null): void;
+export function configureMaterial(material: object, opts: object, usingCameraLight: boolean, isolatedFromSceneAmbient: boolean, contrastUtils: object | null, extra?: {
+    processedColors?: {
+        emissive: string;
+        diffuse: string | null;
+        ambient: string | null;
+    };
+    hasFaceMesh?: boolean;
+}): void;

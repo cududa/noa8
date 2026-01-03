@@ -552,14 +552,14 @@ var EventEmitter$1 = /*@__PURE__*/getDefaultExportFromCjs(eventsExports);
 
 var epsilon = 0.000001;
 
-var create_1 = create;
+var create_1 = create$1;
 
 /**
  * Creates a new, empty vec3
  *
  * @returns {vec3} a new 3D vector
  */
-function create() {
+function create$1() {
     var out = new Float32Array(3);
     out[0] = 0;
     out[1] = 0;
@@ -567,7 +567,7 @@ function create() {
     return out
 }
 
-var clone_1 = clone;
+var clone_1 = clone$1;
 
 /**
  * Creates a new vec3 initialized with values from an existing vector
@@ -575,7 +575,7 @@ var clone_1 = clone;
  * @param {vec3} a vector to clone
  * @returns {vec3} a new 3D vector
  */
-function clone(a) {
+function clone$1(a) {
     var out = new Float32Array(3);
     out[0] = a[0];
     out[1] = a[1];
@@ -666,7 +666,7 @@ function angle(a, b) {
     }     
 }
 
-var copy_1 = copy;
+var copy_1 = copy$1;
 
 /**
  * Copy the values from one vec3 to another
@@ -675,7 +675,7 @@ var copy_1 = copy;
  * @param {vec3} a the source vector
  * @returns {vec3} out
  */
-function copy(out, a) {
+function copy$1(out, a) {
     out[0] = a[0];
     out[1] = a[1];
     out[2] = a[2];
@@ -736,7 +736,7 @@ function exactEquals(a, b) {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
 }
 
-var add_1 = add;
+var add_1 = add$1;
 
 /**
  * Adds two vec3's
@@ -746,14 +746,14 @@ var add_1 = add;
  * @param {vec3} b the second operand
  * @returns {vec3} out
  */
-function add(out, a, b) {
+function add$1(out, a, b) {
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
     out[2] = a[2] + b[2];
     return out
 }
 
-var subtract_1 = subtract;
+var subtract_1 = subtract$1;
 
 /**
  * Subtracts vector b from vector a
@@ -763,7 +763,7 @@ var subtract_1 = subtract;
  * @param {vec3} b the second operand
  * @returns {vec3} out
  */
-function subtract(out, a, b) {
+function subtract$1(out, a, b) {
     out[0] = a[0] - b[0];
     out[1] = a[1] - b[1];
     out[2] = a[2] - b[2];
@@ -810,7 +810,7 @@ function divide(out, a, b) {
 
 var div = divide_1;
 
-var min_1 = min;
+var min_1 = min$1;
 
 /**
  * Returns the minimum of two vec3's
@@ -820,14 +820,14 @@ var min_1 = min;
  * @param {vec3} b the second operand
  * @returns {vec3} out
  */
-function min(out, a, b) {
+function min$1(out, a, b) {
     out[0] = Math.min(a[0], b[0]);
     out[1] = Math.min(a[1], b[1]);
     out[2] = Math.min(a[2], b[2]);
     return out
 }
 
-var max_1 = max;
+var max_1 = max$1;
 
 /**
  * Returns the maximum of two vec3's
@@ -837,7 +837,7 @@ var max_1 = max;
  * @param {vec3} b the second operand
  * @returns {vec3} out
  */
-function max(out, a, b) {
+function max$1(out, a, b) {
     out[0] = Math.max(a[0], b[0]);
     out[1] = Math.max(a[1], b[1]);
     out[2] = Math.max(a[2], b[2]);
@@ -963,7 +963,7 @@ function squaredDistance(a, b) {
 
 var sqrDist = squaredDistance_1;
 
-var length_1 = length;
+var length_1 = length$1;
 
 /**
  * Calculates the length of a vec3
@@ -971,7 +971,7 @@ var length_1 = length;
  * @param {vec3} a vector to calculate length of
  * @returns {Number} length of a
  */
-function length(a) {
+function length$1(a) {
     var x = a[0],
         y = a[1],
         z = a[2];
@@ -1340,11 +1340,11 @@ var glVec3 = {
   , forEach: forEach_1
 };
 
-var vec3$1 = /*@__PURE__*/getDefaultExportFromCjs(glVec3);
+var vec3 = /*@__PURE__*/getDefaultExportFromCjs(glVec3);
 
-var vec3$2 = /*#__PURE__*/_mergeNamespaces({
+var vec3$1 = /*#__PURE__*/_mergeNamespaces({
 	__proto__: null,
-	default: vec3$1
+	default: vec3
 }, [glVec3]);
 
 function iota$1(n) {
@@ -2744,125 +2744,279 @@ function restoreBodyStyles(container) {
     }
 }
 
-var aabb3d = AABB;
+/**
+ * Common utilities
+ * @module glMatrix
+ */
 
-var vec3 = glVec3;
+var ARRAY_TYPE = typeof Float32Array !== "undefined" ? Float32Array : Array;
 
-function AABB(pos, vec) {
+/**
+ * 3 Dimensional Vector
+ * @module vec3
+ */
 
-  if(!(this instanceof AABB)) {
-    return new AABB(pos, vec)
+/**
+ * Creates a new, empty vec3
+ *
+ * @returns {vec3} a new 3D vector
+ */
+function create() {
+  var out = new ARRAY_TYPE(3);
+  if (ARRAY_TYPE != Float32Array) {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
   }
-
-  var pos2 = vec3.create();
-  vec3.add(pos2, pos, vec);
- 
-  this.base = vec3.min(vec3.create(), pos, pos2);
-  this.vec = vec3.clone(vec);
-  this.max = vec3.max(vec3.create(), pos, pos2);
-
-  this.mag = vec3.length(this.vec);
-
+  return out;
 }
 
-var cons = AABB
-  , proto = cons.prototype;
+/**
+ * Creates a new vec3 initialized with values from an existing vector
+ *
+ * @param {ReadonlyVec3} a vector to clone
+ * @returns {vec3} a new 3D vector
+ */
+function clone(a) {
+  var out = new ARRAY_TYPE(3);
+  out[0] = a[0];
+  out[1] = a[1];
+  out[2] = a[2];
+  return out;
+}
 
-proto.width = function() {
-  return this.vec[0]
-};
+/**
+ * Calculates the length of a vec3
+ *
+ * @param {ReadonlyVec3} a vector to calculate length of
+ * @returns {Number} length of a
+ */
+function length(a) {
+  var x = a[0];
+  var y = a[1];
+  var z = a[2];
+  return Math.sqrt(x * x + y * y + z * z);
+}
 
-proto.height = function() {
-  return this.vec[1]
-};
+/**
+ * Copy the values from one vec3 to another
+ *
+ * @param {vec3} out the receiving vector
+ * @param {ReadonlyVec3} a the source vector
+ * @returns {vec3} out
+ */
+function copy(out, a) {
+  out[0] = a[0];
+  out[1] = a[1];
+  out[2] = a[2];
+  return out;
+}
 
-proto.depth = function() {
-  return this.vec[2]
-};
+/**
+ * Adds two vec3's
+ *
+ * @param {vec3} out the receiving vector
+ * @param {ReadonlyVec3} a the first operand
+ * @param {ReadonlyVec3} b the second operand
+ * @returns {vec3} out
+ */
+function add(out, a, b) {
+  out[0] = a[0] + b[0];
+  out[1] = a[1] + b[1];
+  out[2] = a[2] + b[2];
+  return out;
+}
 
-proto.x0 = function() {
-  return this.base[0]
-};
+/**
+ * Subtracts vector b from vector a
+ *
+ * @param {vec3} out the receiving vector
+ * @param {ReadonlyVec3} a the first operand
+ * @param {ReadonlyVec3} b the second operand
+ * @returns {vec3} out
+ */
+function subtract(out, a, b) {
+  out[0] = a[0] - b[0];
+  out[1] = a[1] - b[1];
+  out[2] = a[2] - b[2];
+  return out;
+}
 
-proto.y0 = function() {
-  return this.base[1]
-};
+/**
+ * Returns the minimum of two vec3's
+ *
+ * @param {vec3} out the receiving vector
+ * @param {ReadonlyVec3} a the first operand
+ * @param {ReadonlyVec3} b the second operand
+ * @returns {vec3} out
+ */
+function min(out, a, b) {
+  out[0] = Math.min(a[0], b[0]);
+  out[1] = Math.min(a[1], b[1]);
+  out[2] = Math.min(a[2], b[2]);
+  return out;
+}
 
-proto.z0 = function() {
-  return this.base[2]
-};
+/**
+ * Returns the maximum of two vec3's
+ *
+ * @param {vec3} out the receiving vector
+ * @param {ReadonlyVec3} a the first operand
+ * @param {ReadonlyVec3} b the second operand
+ * @returns {vec3} out
+ */
+function max(out, a, b) {
+  out[0] = Math.max(a[0], b[0]);
+  out[1] = Math.max(a[1], b[1]);
+  out[2] = Math.max(a[2], b[2]);
+  return out;
+}
 
-proto.x1 = function() {
-  return this.max[0]
-};
+/**
+ * Perform some operation over an array of vec3s.
+ *
+ * @param {Array} a the array of vectors to iterate over
+ * @param {Number} stride Number of elements between the start of each vec3. If 0 assumes tightly packed
+ * @param {Number} offset Number of elements to skip at the beginning of the array
+ * @param {Number} count Number of vec3s to iterate over. If 0 iterates over entire array
+ * @param {Function} fn Function to call for each vector in the array
+ * @param {Object} [arg] additional argument to pass to fn
+ * @returns {Array} a
+ * @function
+ */
+(function () {
+  var vec = create();
+  return function (a, stride, offset, count, fn, arg) {
+    var i, l;
+    if (!stride) {
+      stride = 3;
+    }
+    if (!offset) {
+      offset = 0;
+    }
+    if (count) {
+      l = Math.min(count * stride + offset, a.length);
+    } else {
+      l = a.length;
+    }
+    for (i = offset; i < l; i += stride) {
+      vec[0] = a[i];
+      vec[1] = a[i + 1];
+      vec[2] = a[i + 2];
+      fn(vec, vec, arg);
+      a[i] = vec[0];
+      a[i + 1] = vec[1];
+      a[i + 2] = vec[2];
+    }
+    return a;
+  };
+})();
 
-proto.y1 = function() {
-  return this.max[1]
-};
-
-proto.z1 = function() {
-  return this.max[2]
-};
-
-proto.translate = function(by) {
-  vec3.add(this.max, this.max, by);
-  vec3.add(this.base, this.base, by);
-  return this
-};
-
-proto.setPosition = function(pos) {
-  vec3.add(this.max, pos, this.vec);
-  vec3.copy(this.base, pos);
-  return this
-};
-
-proto.expand = function(aabb) {
-  var max = vec3.create()
-    , min = vec3.create();
-
-  vec3.max(max, aabb.max, this.max);
-  vec3.min(min, aabb.base, this.base);
-  vec3.subtract(max, max, min);
-
-  return new AABB(min, max)
-};
-
-proto.intersects = function(aabb) {
-  if(aabb.base[0] > this.max[0]) return false
-  if(aabb.base[1] > this.max[1]) return false
-  if(aabb.base[2] > this.max[2]) return false
-  if(aabb.max[0] < this.base[0]) return false
-  if(aabb.max[1] < this.base[1]) return false
-  if(aabb.max[2] < this.base[2]) return false
-
-  return true
-};
-
-proto.touches = function(aabb) {
-
-  var intersection = this.union(aabb);
-
-  return (intersection !== null) &&
-         ((intersection.width() == 0) ||
-         (intersection.height() == 0) || 
-         (intersection.depth() == 0))
-
-};
-
-proto.union = function(aabb) {
-  if(!this.intersects(aabb)) return null
-
-  var base_x = Math.max(aabb.base[0], this.base[0])
-    , base_y = Math.max(aabb.base[1], this.base[1])
-    , base_z = Math.max(aabb.base[2], this.base[2])
-    , max_x = Math.min(aabb.max[0], this.max[0])
-    , max_y = Math.min(aabb.max[1], this.max[1])
-    , max_z = Math.min(aabb.max[2], this.max[2]);
-
-  return new AABB([base_x, base_y, base_z], [max_x - base_x, max_y - base_y, max_z - base_z])
-};
-
-var aabb = /*@__PURE__*/getDefaultExportFromCjs(aabb3d);
+class AABB {
+    base;
+    vec;
+    max;
+    mag;
+    constructor(pos, vec) {
+        const pos2 = create();
+        add(pos2, pos, vec);
+        this.base = min(create(), pos, pos2);
+        this.vec = clone(vec);
+        this.max = max(create(), pos, pos2);
+        this.mag = length(this.vec);
+    }
+    width() {
+        return this.vec[0];
+    }
+    height() {
+        return this.vec[1];
+    }
+    depth() {
+        return this.vec[2];
+    }
+    x0() {
+        return this.base[0];
+    }
+    y0() {
+        return this.base[1];
+    }
+    z0() {
+        return this.base[2];
+    }
+    x1() {
+        return this.max[0];
+    }
+    y1() {
+        return this.max[1];
+    }
+    z1() {
+        return this.max[2];
+    }
+    /**
+     * Moves the box. Returns itself.
+     */
+    translate(by) {
+        add(this.max, this.max, by);
+        add(this.base, this.base, by);
+        return this;
+    }
+    setPosition(pos) {
+        add(this.max, pos, this.vec);
+        copy(this.base, pos);
+        return this;
+    }
+    /**
+     * Returns a new `aabb` that surrounds both `aabb`'s.
+     */
+    expand(aabb) {
+        const max$1 = create();
+        const min$1 = create();
+        max(max$1, aabb.max, this.max);
+        min(min$1, aabb.base, this.base);
+        subtract(max$1, max$1, min$1);
+        return new AABB(min$1, max$1);
+    }
+    /**
+     * Returns `true` if the two bounding boxes intersect (or touch at all.)
+     */
+    intersects(aabb) {
+        if (aabb.base[0] > this.max[0])
+            return false;
+        if (aabb.base[1] > this.max[1])
+            return false;
+        if (aabb.base[2] > this.max[2])
+            return false;
+        if (aabb.max[0] < this.base[0])
+            return false;
+        if (aabb.max[1] < this.base[1])
+            return false;
+        if (aabb.max[2] < this.base[2])
+            return false;
+        return true;
+    }
+    touches(aabb) {
+        const intersection = this.union(aabb);
+        return (intersection !== null) &&
+            ((intersection.width() == 0) ||
+                (intersection.height() == 0) ||
+                (intersection.depth() == 0));
+    }
+    /**
+     * Returns a new `aabb` representing the shared area of the
+     * two `aabb`'s. returns `null` if the boxes don't intersect.
+     */
+    union(aabb) {
+        if (!this.intersects(aabb))
+            return null;
+        const base_x = Math.max(aabb.base[0], this.base[0]);
+        const base_y = Math.max(aabb.base[1], this.base[1]);
+        const base_z = Math.max(aabb.base[2], this.base[2]);
+        const max_x = Math.min(aabb.max[0], this.max[0]);
+        const max_y = Math.min(aabb.max[1], this.max[1]);
+        const max_z = Math.min(aabb.max[2], this.max[2]);
+        return new AABB([base_x, base_y, base_z], [max_x - base_x, max_y - base_y, max_z - base_z]);
+    }
+}
 
 // reused array instances
 
@@ -3425,7 +3579,7 @@ class Camera {
 
 function cameraObstructionDistance(self) {
     if (!self._sweepBox) {
-        self._sweepBox = new aabb([0, 0, 0], [0.2, 0.2, 0.2]);
+        self._sweepBox = new AABB([0, 0, 0], [0.2, 0.2, 0.2]);
         self._sweepGetVoxel = self.noa.world.getBlockSolidity.bind(self.noa.world);
         self._sweepVec = glVec3.create();
         self._sweepHit = () => true;
@@ -12075,7 +12229,7 @@ function setUpFPS() {
 
 class RigidBody {
     constructor(_aabb, mass, friction, restitution, gravMult, onCollide, autoStep) {
-        this.aabb = new aabb(_aabb.base, _aabb.vec); // clone
+        this.aabb = new AABB(_aabb.base, _aabb.vec); // clone
         this.mass = mass;
         this.friction = friction;
         this.restitution = restitution;
@@ -12087,7 +12241,7 @@ class RigidBody {
         this.onStep = null;
 
         // internal state
-        this.velocity = vec3$1.create();
+        this.velocity = vec3.create();
         this.resting = [0, 0, 0];
         this.inFluid = false;
 
@@ -12095,27 +12249,27 @@ class RigidBody {
         /** @internal */
         this._ratioInFluid = 0;
         /** @internal */
-        this._forces = vec3$1.create();
+        this._forces = vec3.create();
         /** @internal */
-        this._impulses = vec3$1.create();
+        this._impulses = vec3.create();
         /** @internal */
         this._sleepFrameCount = 10 | 0;
     }
 
     setPosition(p) {
-        vec3$1.subtract(p, p, this.aabb.base);
+        vec3.subtract(p, p, this.aabb.base);
         this.aabb.translate(p);
         this._markActive();
     }
     getPosition() {
-        return vec3$1.clone(this.aabb.base)
+        return vec3.clone(this.aabb.base)
     }
     applyForce(f) {
-        vec3$1.add(this._forces, this._forces, f);
+        vec3.add(this._forces, this._forces, f);
         this._markActive();
     }
     applyImpulse(i) {
-        vec3$1.add(this._impulses, this._impulses, i);
+        vec3.add(this._impulses, this._impulses, i);
         this._markActive();
     }
 
@@ -12190,7 +12344,7 @@ function Physics$1(opts, testSolid, testFluid) {
 */
 Physics$1.prototype.addBody = function (_aabb, mass, friction,
     restitution, gravMult, onCollide) {
-    _aabb = _aabb || new aabb([0, 0, 0], [1, 1, 1]);
+    _aabb = _aabb || new AABB([0, 0, 0], [1, 1, 1]);
     if (typeof mass == 'undefined') mass = 1;
     if (typeof friction == 'undefined') friction = 1;
     if (typeof restitution == 'undefined') restitution = 0;
@@ -12215,18 +12369,18 @@ Physics$1.prototype.removeBody = function (b) {
  *    PHYSICS AND COLLISIONS
 */
 
-var a = vec3$1.create();
-var dv = vec3$1.create();
-var dx = vec3$1.create();
-var impacts = vec3$1.create();
-var oldResting = vec3$1.create();
+var a = vec3.create();
+var dv = vec3.create();
+var dx = vec3.create();
+var impacts = vec3.create();
+var oldResting = vec3.create();
 
 
 /* Ticks the simulation forwards in time. */
 Physics$1.prototype.tick = function (dt) {
     // convert dt to seconds
     dt = dt / 1000;
-    var noGravity = equals(0, vec3$1.squaredLength(this.gravity));
+    var noGravity = equals(0, vec3.squaredLength(this.gravity));
     this.bodies.forEach(b => iterateBody(this, b, dt, noGravity));
 };
 
@@ -12237,13 +12391,13 @@ Physics$1.prototype.tick = function (dt) {
 */
 
 function iterateBody(self, b, dt, noGravity) {
-    vec3$1.copy(oldResting, b.resting);
+    vec3.copy(oldResting, b.resting);
 
     // treat bodies with <= mass as static
     if (b.mass <= 0) {
-        vec3$1.set(b.velocity, 0, 0, 0);
-        vec3$1.set(b._forces, 0, 0, 0);
-        vec3$1.set(b._impulses, 0, 0, 0);
+        vec3.set(b.velocity, 0, 0, 0);
+        vec3.set(b._forces, 0, 0, 0);
+        vec3.set(b._impulses, 0, 0, 0);
         return
     }
 
@@ -12264,14 +12418,14 @@ function iterateBody(self, b, dt, noGravity) {
     // semi-implicit Euler integration
 
     // a = f/m + gravity*gravityMultiplier
-    vec3$1.scale(a, b._forces, 1 / b.mass);
-    vec3$1.scaleAndAdd(a, a, self.gravity, b.gravityMultiplier);
+    vec3.scale(a, b._forces, 1 / b.mass);
+    vec3.scaleAndAdd(a, a, self.gravity, b.gravityMultiplier);
 
     // dv = i/m + a*dt
     // v1 = v0 + dv
-    vec3$1.scale(dv, b._impulses, 1 / b.mass);
-    vec3$1.scaleAndAdd(dv, dv, a, dt);
-    vec3$1.add(b.velocity, b.velocity, dv);
+    vec3.scale(dv, b._impulses, 1 / b.mass);
+    vec3.scaleAndAdd(dv, dv, a, dt);
+    vec3.add(b.velocity, b.velocity, dv);
 
     // apply friction based on change in velocity this frame
     if (b.friction) {
@@ -12288,14 +12442,14 @@ function iterateBody(self, b, dt, noGravity) {
         drag *= 1 - (1 - b.ratioInFluid) ** 2;
     }
     var mult = Math.max(1 - drag * dt / b.mass, 0);
-    vec3$1.scale(b.velocity, b.velocity, mult);
+    vec3.scale(b.velocity, b.velocity, mult);
 
     // x1-x0 = v1*dt
-    vec3$1.scale(dx, b.velocity, dt);
+    vec3.scale(dx, b.velocity, dt);
 
     // clear forces and impulses for next timestep
-    vec3$1.set(b._forces, 0, 0, 0);
-    vec3$1.set(b._impulses, 0, 0, 0);
+    vec3.set(b._forces, 0, 0, 0);
+    vec3.set(b._impulses, 0, 0, 0);
 
     // cache old position for use in autostepping
     if (b.autoStep) {
@@ -12319,24 +12473,24 @@ function iterateBody(self, b, dt, noGravity) {
             b.velocity[i] = 0;
         }
     }
-    var mag = vec3$1.length(impacts);
+    var mag = vec3.length(impacts);
     if (mag > .001) { // epsilon
         // send collision event - allows client to optionally change
         // body's restitution depending on what terrain it hit
         // event argument is impulse J = m * dv
-        vec3$1.scale(impacts, impacts, b.mass);
+        vec3.scale(impacts, impacts, b.mass);
         if (b.onCollide) b.onCollide(impacts);
 
         // bounce depending on restitution and minBounceImpulse
         if (b.restitution > 0 && mag > self.minBounceImpulse) {
-            vec3$1.scale(impacts, impacts, b.restitution);
+            vec3.scale(impacts, impacts, b.restitution);
             b.applyImpulse(impacts);
         }
     }
 
 
     // sleep check
-    var vsq = vec3$1.squaredLength(b.velocity);
+    var vsq = vec3.squaredLength(b.velocity);
     if (vsq > 1e-5) b._markActive();
 }
 
@@ -12381,14 +12535,14 @@ function applyFluidForces(self, body) {
     var displaced = vol * ratioInFluid;
     // bouyant force = -gravity * fluidDensity * volumeDisplaced
     var f = _fluidVec;
-    vec3$1.scale(f, self.gravity, -self.fluidDensity * displaced);
+    vec3.scale(f, self.gravity, -self.fluidDensity * displaced);
     body.applyForce(f);
 
     body.inFluid = true;
     body.ratioInFluid = ratioInFluid;
 }
 
-var _fluidVec = vec3$1.create();
+var _fluidVec = vec3.create();
 
 
 
@@ -12407,9 +12561,9 @@ function applyFrictionByAxis(axis, body, dvel) {
     if (restDir * vNormal <= 0) return
 
     // current vel lateral to friction axis
-    vec3$1.copy(lateralVel, body.velocity);
+    vec3.copy(lateralVel, body.velocity);
     lateralVel[axis] = 0;
-    var vCurr = vec3$1.length(lateralVel);
+    var vCurr = vec3.length(lateralVel);
     if (equals(vCurr, 0)) return
 
     // treat current change in velocity as the result of a pseudoforce
@@ -12428,7 +12582,7 @@ function applyFrictionByAxis(axis, body, dvel) {
     body.velocity[(axis + 1) % 3] *= scaler;
     body.velocity[(axis + 2) % 3] *= scaler;
 }
-var lateralVel = vec3$1.create();
+var lateralVel = vec3.create();
 
 
 
@@ -12441,7 +12595,7 @@ var lateralVel = vec3$1.create();
 
 // sweep aabb along velocity vector and set resting vector
 function processCollisions(self, box, velocity, resting) {
-    vec3$1.set(resting, 0, 0, 0);
+    vec3.set(resting, 0, 0, 0);
     return sweep$4(self.testSolid, box, velocity, function (dist, axis, dir, vec) {
         resting[axis] = dir;
         vec[axis] = 0;
@@ -12456,11 +12610,11 @@ function processCollisions(self, box, velocity, resting) {
  *    AUTO-STEPPING
 */
 
-var tmpBox = new aabb([], []);
-var tmpResting = vec3$1.create();
-var targetPos = vec3$1.create();
-var upvec = vec3$1.create();
-var leftover = vec3$1.create();
+var tmpBox = new AABB([], []);
+var tmpResting = vec3.create();
+var targetPos = vec3.create();
+var upvec = vec3.create();
+var leftover = vec3.create();
 
 function tryAutoStepping(self, b, oldBox, dx) {
     if (b.resting[1] >= 0 && !b.inFluid) return
@@ -12477,7 +12631,7 @@ function tryAutoStepping(self, b, oldBox, dx) {
     if (!zBlocked && ratio < 1 / cutoff) return
 
     // original target position before being obstructed
-    vec3$1.add(targetPos, oldBox.base, dx);
+    vec3.add(targetPos, oldBox.base, dx);
 
     // move towards the target until the first X/Z collision
     var getVoxels = self.testSolid;
@@ -12488,7 +12642,7 @@ function tryAutoStepping(self, b, oldBox, dx) {
 
     var y = b.aabb.base[1];
     var ydist = Math.floor(y + 1.001) - y;
-    vec3$1.set(upvec, 0, ydist, 0);
+    vec3.set(upvec, 0, ydist, 0);
     var collided = false;
     // sweep up, bailing on any obstruction
     sweep$4(getVoxels, oldBox, upvec, function (dist, axis, dir, vec) {
@@ -12498,7 +12652,7 @@ function tryAutoStepping(self, b, oldBox, dx) {
     if (collided) return // could't move upwards
 
     // now move in X/Z however far was left over before hitting the obstruction
-    vec3$1.subtract(leftover, targetPos, oldBox.base);
+    vec3.subtract(leftover, targetPos, oldBox.base);
     leftover[1] = 0;
     processCollisions(self, oldBox, leftover, tmpResting);
 
@@ -12530,14 +12684,14 @@ function bodyAsleep(self, body, dt, noGravity) {
     // and check there's still a collision
     var isResting = false;
     var gmult = 0.5 * dt * dt * body.gravityMultiplier;
-    vec3$1.scale(sleepVec, self.gravity, gmult);
+    vec3.scale(sleepVec, self.gravity, gmult);
     sweep$4(self.testSolid, body.aabb, sleepVec, function () {
         isResting = true;
         return true
     }, true);
     return isResting
 }
-var sleepVec = vec3$1.create();
+var sleepVec = vec3.create();
 
 
 
@@ -15997,8 +16151,9 @@ class TextHandle {
      * @param {import('@babylonjs/core').Mesh} mesh - Babylon mesh
      * @param {string} content - Text content
      * @param {object} options - Creation options
+     * @param {import('@babylonjs/core').Mesh|null} [faceMesh] - Optional emissive face mesh
      */
-    constructor(config, id, textInstance, mesh, content, options) {
+    constructor(config, id, textInstance, mesh, content, options, faceMesh = null) {
         /** @internal */
         this._config = config;
         /** @internal */
@@ -16016,6 +16171,8 @@ class TextHandle {
 
         /** The Babylon mesh for this text */
         this.mesh = mesh;
+        /** Optional emissive face mesh (child of mesh) */
+        this.faceMesh = faceMesh || null;
         /** The text content */
         this.content = content;
 
@@ -16052,6 +16209,14 @@ class TextHandle {
         return this.mesh
     }
 
+    /**
+     * Get the emissive face mesh if available.
+     * @returns {import('@babylonjs/core').Mesh|null}
+     */
+    getFaceMesh() {
+        return this.faceMesh
+    }
+
     /** Dispose this text instance and clean up resources */
     dispose() {
         this._disposeInternal(false);
@@ -16074,6 +16239,10 @@ class TextHandle {
 
         if (this.mesh) {
             this._config.removeFromLighting(this.mesh);
+        }
+        // Also remove face mesh from lighting
+        if (this.faceMesh) {
+            this._config.removeFromLighting(this.faceMesh);
         }
 
         if (this._textInstance && typeof this._textInstance.dispose === 'function') {
@@ -16109,6 +16278,32 @@ class TextHandle {
             }
         }
 
+        // Dispose face mesh (now unparented, so dispose separately)
+        if (this.faceMesh) {
+            try {
+                this._config.removeMeshFromScene(this.faceMesh);
+            } catch (err) {
+                // ignore - mesh may not be registered
+            }
+            if (!meshAlreadyDisposed && typeof this.faceMesh.dispose === 'function') {
+                var faceDisposed = false;
+                if (typeof this.faceMesh.isDisposed === 'function') {
+                    try {
+                        faceDisposed = this.faceMesh.isDisposed();
+                    } catch (err) {
+                        faceDisposed = false;
+                    }
+                }
+                if (!faceDisposed) {
+                    try {
+                        this.faceMesh.dispose();
+                    } catch (err) {
+                        warn('Failed to dispose face mesh:', err);
+                    }
+                }
+            }
+        }
+
         // Remove shadows
         this._config.removeShadows(this._id);
 
@@ -16117,6 +16312,7 @@ class TextHandle {
 
         this._textInstance = null;
         this.mesh = null;
+        this.faceMesh = null;
     }
 }
 
@@ -16183,14 +16379,17 @@ function processContrastColors(opts, contrastUtils) {
  * @param {boolean} usingCameraLight - Whether camera-relative lighting is active
  * @param {boolean} isolatedFromSceneAmbient - Whether to zero ambient
  * @param {object|null} contrastUtils - Color utilities from meshwriter
+ * @param {{processedColors?: {emissive: string, diffuse: string|null, ambient: string|null}, hasFaceMesh?: boolean}} [extra]
  */
-function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils) {
+function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils, extra = {}) {
     if (!material) return
 
     // Always render both faces so 3D extrusion stays visible
     material.backFaceCulling = false;
 
-    if (opts.autoContrast) {
+    var hasFaceMesh = !!extra.hasFaceMesh;
+
+    if (opts.autoContrast && !hasFaceMesh) {
         // Use Fresnel-based emissive even when camera lighting is active.
         // This keeps front faces bright for dyslexic readability while allowing
         // physical lights to continue adding depth to the edges.
@@ -16208,6 +16407,10 @@ function configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAm
             Math.min(1, brightColor.b * brighten)
         );
         material.emissiveFresnelParameters.rightColor = new Color3(darkColor.r, darkColor.g, darkColor.b);
+        material.emissiveColor = new Color3(0, 0, 0);
+    } else if (hasFaceMesh && !opts.emissiveOnly) {
+        // With a dedicated face mesh, the rim should respond strictly to lights.
+        material.emissiveFresnelParameters = null;
         material.emissiveColor = new Color3(0, 0, 0);
     }
 
@@ -16251,11 +16454,13 @@ function createWorldText(params) {
     if (opts.specularColor) colors.specular = opts.specularColor;
 
     // Create meshwriter text instance
+    // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
+    // The rim material gets configured separately by configureMaterial() below.
     var textInstance = new Writer(content, {
         'font-family': opts.font,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
-        'color': processedColors.emissive,
+        'color': opts.color,
         'alpha': opts.alpha,
         'anchor': opts.anchor,
         'emissive-only': opts.emissiveOnly,
@@ -16265,6 +16470,10 @@ function createWorldText(params) {
     });
 
     var mesh = textInstance.getMesh();
+    var faceMesh = (typeof textInstance.getFaceMesh === 'function')
+        ? textInstance.getFaceMesh()
+        : null;
+
     if (!mesh) {
         warn('Failed to create text mesh');
         return null
@@ -16276,22 +16485,52 @@ function createWorldText(params) {
     // Configure material for contrast and lighting
     var material = textInstance.getMaterial();
     var isolatedFromSceneAmbient = textLighting && textLighting.isIsolatedFromSceneAmbient();
-    configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils);
 
-    // Add to noa scene management
+    configureMaterial(material, opts, usingCameraLight, isolatedFromSceneAmbient, contrastUtils, {
+        hasFaceMesh: !!faceMesh
+    });
+
+    // Add rim mesh to noa scene management
     noa.rendering.addMeshToScene(mesh, false, position);
 
-    // Register with camera-relative lighting system
-    if (usingCameraLight && textLighting) {
-        textLighting.addTextMesh(mesh);
-    }
-
-    // Position mesh in world (convert global to local)
+    // Position rim mesh in world (convert global to local)
     var localPos = noa.globalToLocal(position, null, []);
     mesh.position.copyFromFloats(localPos[0], localPos[1], localPos[2]);
 
     // Text renders in XZ plane by default, rotate to be vertical (upright)
     mesh.rotation.x = -Math.PI / 2;
+
+    // Handle face mesh - unparent and add to scene separately
+    // Face mesh must be in noa's scene management to render properly
+    if (faceMesh) {
+        // Unparent face mesh (meshwriter parents it to rim by default)
+        faceMesh.parent = null;
+
+        // Position face mesh same as rim
+        faceMesh.position.copyFrom(mesh.position);
+        faceMesh.rotation.copyFrom(mesh.rotation);
+
+        // Small Z offset to prevent z-fighting (after rotation, local Y becomes world -Z)
+        // Positive offset moves face toward camera
+        faceMesh.position.z -= 0.01;
+
+        // Add face mesh to noa scene management
+        var faceGlobalPos = [
+            position[0],
+            position[1],
+            position[2] - 0.01
+        ];
+        noa.rendering.addMeshToScene(faceMesh, false, faceGlobalPos);
+    }
+
+    // Register with camera-relative lighting system
+    if (usingCameraLight && textLighting) {
+        textLighting.addTextMesh(mesh);
+        // Also add face mesh to lighting system
+        if (faceMesh) {
+            textLighting.addTextMesh(faceMesh);
+        }
+    }
 
     // Create handle for management
     var id = nextId;
@@ -16303,7 +16542,7 @@ function createWorldText(params) {
         },
         removeMeshFromScene: (m) => noa.rendering.removeMeshFromScene(m)
     };
-    var handle = new TextHandle(handleConfig, id, textInstance, mesh, content, opts);
+    var handle = new TextHandle(handleConfig, id, textInstance, mesh, content, opts, faceMesh);
     registerHandle(id, handle);
 
     // Create shadows if enabled
@@ -17092,7 +17331,7 @@ class Engine extends eventsExports.EventEmitter {
         if (opts.debug) {
             // expose often-used classes
             /** @internal */
-            this.vec3 = vec3$2;
+            this.vec3 = vec3$1;
             /** @internal */
             this.ndarray = ndarray$1;
             /** @internal */
@@ -17102,13 +17341,13 @@ class Engine extends eventsExports.EventEmitter {
             // decorate window while making TS happy
             var win = /** @type {any} */ (window);
             win.noa = this;
-            win.vec3 = vec3$2;
+            win.vec3 = vec3$1;
             win.ndarray = ndarray$1;
             win.scene = this.rendering.scene;
             win.skeletonUtils = skeletonUtils;
             this._cleanupDebugGlobals = () => {
                 if (win.noa === this) delete win.noa;
-                if (win.vec3 === vec3$2) delete win.vec3;
+                if (win.vec3 === vec3$1) delete win.vec3;
                 if (win.ndarray === ndarray$1) delete win.ndarray;
                 if (win.scene === this.rendering.scene) delete win.scene;
                 if (win.skeletonUtils === skeletonUtils) delete win.skeletonUtils;

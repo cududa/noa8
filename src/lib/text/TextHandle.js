@@ -18,8 +18,9 @@ export class TextHandle {
      * @param {import('@babylonjs/core').Mesh} mesh - Babylon mesh
      * @param {string} content - Text content
      * @param {object} options - Creation options
+     * @param {import('@babylonjs/core').Mesh|null} [faceMesh] - Optional emissive face mesh
      */
-    constructor(config, id, textInstance, mesh, content, options) {
+    constructor(config, id, textInstance, mesh, content, options, faceMesh = null) {
         /** @internal */
         this._config = config
         /** @internal */
@@ -37,6 +38,8 @@ export class TextHandle {
 
         /** The Babylon mesh for this text */
         this.mesh = mesh
+        /** Optional emissive face mesh (child of mesh) */
+        this.faceMesh = faceMesh || null
         /** The text content */
         this.content = content
 
@@ -73,6 +76,14 @@ export class TextHandle {
         return this.mesh
     }
 
+    /**
+     * Get the emissive face mesh if available.
+     * @returns {import('@babylonjs/core').Mesh|null}
+     */
+    getFaceMesh() {
+        return this.faceMesh
+    }
+
     /** Dispose this text instance and clean up resources */
     dispose() {
         this._disposeInternal(false)
@@ -95,6 +106,10 @@ export class TextHandle {
 
         if (this.mesh) {
             this._config.removeFromLighting(this.mesh)
+        }
+        // Also remove face mesh from lighting
+        if (this.faceMesh) {
+            this._config.removeFromLighting(this.faceMesh)
         }
 
         if (this._textInstance && typeof this._textInstance.dispose === 'function') {
@@ -130,6 +145,32 @@ export class TextHandle {
             }
         }
 
+        // Dispose face mesh (now unparented, so dispose separately)
+        if (this.faceMesh) {
+            try {
+                this._config.removeMeshFromScene(this.faceMesh)
+            } catch (err) {
+                // ignore - mesh may not be registered
+            }
+            if (!meshAlreadyDisposed && typeof this.faceMesh.dispose === 'function') {
+                var faceDisposed = false
+                if (typeof this.faceMesh.isDisposed === 'function') {
+                    try {
+                        faceDisposed = this.faceMesh.isDisposed()
+                    } catch (err) {
+                        faceDisposed = false
+                    }
+                }
+                if (!faceDisposed) {
+                    try {
+                        this.faceMesh.dispose()
+                    } catch (err) {
+                        warn('Failed to dispose face mesh:', err)
+                    }
+                }
+            }
+        }
+
         // Remove shadows
         this._config.removeShadows(this._id)
 
@@ -138,5 +179,6 @@ export class TextHandle {
 
         this._textInstance = null
         this.mesh = null
+        this.faceMesh = null
     }
 }
