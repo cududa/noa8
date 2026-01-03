@@ -121,6 +121,18 @@ export class TextLighting {
             this._handleNewSceneLight(light)
         })
 
+        // Process any meshes that were registered before the light was created
+        if (this._enabled) {
+            for (var mesh of this._meshRegistry) {
+                var camPos = this.noa.camera.getPosition()
+                var meshPos = mesh.absolutePosition || mesh.position
+                var distSq = distanceSquared(camPos, meshPos)
+                if (distSq < this._lodDistanceSq) {
+                    this._switchToTextLight(mesh)
+                }
+            }
+        }
+
         log('TextLighting initialized with preset:', this._preset, 'isolateFromSceneAmbient:', this._isolateFromSceneAmbient)
     }
 

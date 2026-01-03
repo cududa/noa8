@@ -122,13 +122,14 @@ export class Text {
             this._MeshWriter = result.MeshWriter
             this._contrastUtils = result.contrastUtils
 
-            this._readyState.setReady()
-
             // Initialize shadow manager
             this._shadowManager.initialize()
 
-            // Initialize camera-relative text lighting
+            // Initialize camera-relative text lighting BEFORE marking ready
+            // so it's available when onReady callbacks fire
             this._textLighting = new TextLighting(this.noa, this._textLightingOpts)
+
+            this._readyState.setReady()
 
             // Set up render observer for shadow updates and text lighting
             this._renderObserver = scene.onBeforeRenderObservable.add(() => {

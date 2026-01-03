@@ -15571,6 +15571,18 @@ class TextLighting {
             this._handleNewSceneLight(light);
         });
 
+        // Process any meshes that were registered before the light was created
+        if (this._enabled) {
+            for (var mesh of this._meshRegistry) {
+                var camPos = this.noa.camera.getPosition();
+                var meshPos = mesh.absolutePosition || mesh.position;
+                var distSq = distanceSquared(camPos, meshPos);
+                if (distSq < this._lodDistanceSq) {
+                    this._switchToTextLight(mesh);
+                }
+            }
+        }
+
         log('TextLighting initialized with preset:', this._preset, 'isolateFromSceneAmbient:', this._isolateFromSceneAmbient);
     }
 
@@ -16700,13 +16712,14 @@ class Text {
             this._MeshWriter = result.MeshWriter;
             this._contrastUtils = result.contrastUtils;
 
-            this._readyState.setReady();
-
             // Initialize shadow manager
             this._shadowManager.initialize();
 
-            // Initialize camera-relative text lighting
+            // Initialize camera-relative text lighting BEFORE marking ready
+            // so it's available when onReady callbacks fire
             this._textLighting = new TextLighting(this.noa, this._textLightingOpts);
+
+            this._readyState.setReady();
 
             // Set up render observer for shadow updates and text lighting
             this._renderObserver = scene.onBeforeRenderObservable.add(() => {
