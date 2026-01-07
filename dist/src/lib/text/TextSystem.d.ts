@@ -165,6 +165,14 @@ export type TextOptions = {
      */
     letterThickness?: number;
     /**
+     * - Extra space between letters in world units (added after kerning, default: 0)
+     */
+    letterSpacing?: number;
+    /**
+     * - Extra space for word boundaries in world units (added to spaces, default: 0)
+     */
+    wordSpacing?: number;
+    /**
      * - Hex color string for emissive/face color (default: '#FFFFFF')
      */
     color?: string;

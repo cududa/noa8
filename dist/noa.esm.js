@@ -16467,7 +16467,7 @@ function createWorldText(params) {
     // Create meshwriter text instance
     // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
     // The rim material gets configured separately by configureMaterial() below.
-    var textInstance = new Writer(content, {
+    var writerOpts = {
         'font-family': opts.font,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
@@ -16478,7 +16478,12 @@ function createWorldText(params) {
         'fog-enabled': opts.fogEnabled,
         'colors': Object.keys(colors).length > 0 ? colors : undefined,
         'position': { x: 0, y: 0, z: 0 }
-    });
+    };
+    // Add spacing options if provided (for dyslexia-friendly text)
+    if (opts.letterSpacing != null) writerOpts['letter-spacing'] = opts.letterSpacing;
+    if (opts.wordSpacing != null) writerOpts['word-spacing'] = opts.wordSpacing;
+
+    var textInstance = new Writer(content, writerOpts);
 
     var mesh = textInstance.getMesh();
     var faceMesh = (typeof textInstance.getFaceMesh === 'function')
@@ -16982,6 +16987,8 @@ class Text {
  * @property {string} [font] - Font family name (default: 'Helvetica')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
+ * @property {number} [letterSpacing] - Extra space between letters in world units (added after kerning, default: 0)
+ * @property {number} [wordSpacing] - Extra space for word boundaries in world units (added to spaces, default: 0)
  * @property {string} [color] - Hex color string for emissive/face color (default: '#FFFFFF')
  * @property {number} [alpha] - Transparency 0-1 (default: 1)
  * @property {string} [anchor] - 'left', 'center', or 'right' (default: 'center')

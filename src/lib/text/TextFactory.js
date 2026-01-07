@@ -39,7 +39,7 @@ export function createWorldText(params) {
     // Create meshwriter text instance
     // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
     // The rim material gets configured separately by configureMaterial() below.
-    var textInstance = new Writer(content, {
+    var writerOpts = {
         'font-family': opts.font,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
@@ -50,7 +50,12 @@ export function createWorldText(params) {
         'fog-enabled': opts.fogEnabled,
         'colors': Object.keys(colors).length > 0 ? colors : undefined,
         'position': { x: 0, y: 0, z: 0 }
-    })
+    }
+    // Add spacing options if provided (for dyslexia-friendly text)
+    if (opts.letterSpacing != null) writerOpts['letter-spacing'] = opts.letterSpacing
+    if (opts.wordSpacing != null) writerOpts['word-spacing'] = opts.wordSpacing
+
+    var textInstance = new Writer(content, writerOpts)
 
     var mesh = textInstance.getMesh()
     var faceMesh = (typeof textInstance.getFaceMesh === 'function')

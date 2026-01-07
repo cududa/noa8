@@ -375,6 +375,8 @@ export class Text {
  * @property {string} [font] - Font family name (default: 'Helvetica')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
+ * @property {number} [letterSpacing] - Extra space between letters in world units (added after kerning, default: 0)
+ * @property {number} [wordSpacing] - Extra space for word boundaries in world units (added to spaces, default: 0)
  * @property {string} [color] - Hex color string for emissive/face color (default: '#FFFFFF')
  * @property {number} [alpha] - Transparency 0-1 (default: 1)
  * @property {string} [anchor] - 'left', 'center', or 'right' (default: 'center')
