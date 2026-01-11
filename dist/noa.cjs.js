@@ -16096,12 +16096,12 @@ function createDefaultOptions(constructorOpts) {
  */
 async function loadMeshWriter(scene, opts) {
     // Dynamic import to handle optional dependency
-    var meshwriter = await import('meshwriter');
+    var meshwriter = await import('meshwriter-cudu');
     var { MeshWriter, registerFont } = meshwriter;
 
     // Import and register default font
     try {
-        var helvetica = await import('meshwriter/fonts/helvetica');
+        var helvetica = await import('meshwriter-cudu/fonts/helvetica');
         registerFont('Helvetica', helvetica.default);
     } catch (e) {
         warn('Could not load default Helvetica font:', e);
@@ -16757,12 +16757,12 @@ class Text {
      *
      * @example
      * ```js
-     * import jura from 'meshwriter/fonts/jura'
+     * import jura from 'meshwriter-cudu/fonts/jura'
      * noa.text.registerFont('Jura', jura)
      * ```
      *
      * @param {string} name - Font name to register
-     * @param {object} fontData - Font data (FontSpec object) from meshwriter/fonts
+     * @param {object} fontData - Font data (FontSpec object) from meshwriter-cudu/fonts
      */
     registerFont(name, fontData) {
         if (!this._registerFont) {

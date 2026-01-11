@@ -55,7 +55,7 @@
         "earcut": ">=2.0.0"
     },
     "optionalDependencies": {
-        "meshwriter": "*"
+        "meshwriter-cudu": "*"
     },
     "devDependencies": {
         "@babylonjs/core": "^8.0.0",

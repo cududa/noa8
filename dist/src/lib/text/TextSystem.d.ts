@@ -72,12 +72,12 @@ export class Text {
      *
      * @example
      * ```js
-     * import jura from 'meshwriter/fonts/jura'
+     * import jura from 'meshwriter-cudu/fonts/jura'
      * noa.text.registerFont('Jura', jura)
      * ```
      *
      * @param {string} name - Font name to register
-     * @param {object} fontData - Font data (FontSpec object) from meshwriter/fonts
+     * @param {object} fontData - Font data (FontSpec object) from meshwriter-cudu/fonts
      */
     registerFont(name: string, fontData: object): void;
     /**

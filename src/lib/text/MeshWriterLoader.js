@@ -22,12 +22,12 @@ import { log, warn } from './logging.js'
  */
 export async function loadMeshWriter(scene, opts) {
     // Dynamic import to handle optional dependency
-    var meshwriter = await import('meshwriter')
+    var meshwriter = await import('meshwriter-cudu')
     var { MeshWriter, registerFont } = meshwriter
 
     // Import and register default font
     try {
-        var helvetica = await import('meshwriter/fonts/helvetica')
+        var helvetica = await import('meshwriter-cudu/fonts/helvetica')
         registerFont('Helvetica', helvetica.default)
     } catch (e) {
         warn('Could not load default Helvetica font:', e)
