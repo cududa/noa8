@@ -24,7 +24,11 @@ export var defaultOptions = {
 
 /**
  * Chunk sorting distance function type
- * @typedef {function(number, number, number): number} ChunkSortingDistFn
+ * @callback ChunkSortingDistFn
+ * @param {number} i - Chunk i offset from player
+ * @param {number} j - Chunk j offset from player
+ * @param {number} k - Chunk k offset from player
+ * @returns {number} Distance value for sorting
  */
 
 /**

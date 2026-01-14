@@ -15,7 +15,13 @@ import { Chunk } from '../chunk.js'
 
 /**
  * Async chunk generator function signature
- * @typedef {function(number, number, number, number, AbortSignal): Promise<ChunkGeneratorResult|null>} ChunkGeneratorFunction
+ * @callback ChunkGeneratorFunction
+ * @param {number} x - Chunk world x coordinate
+ * @param {number} y - Chunk world y coordinate
+ * @param {number} z - Chunk world z coordinate
+ * @param {number} requestID - Unique request identifier
+ * @param {AbortSignal} signal - Abort signal for cancellation
+ * @returns {Promise<ChunkGeneratorResult|null>} Generated chunk data or null
  */
 
 
