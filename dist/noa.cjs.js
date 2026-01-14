@@ -4462,237 +4462,6 @@ function ECS$1() {
 
 var ECS = /*@__PURE__*/getDefaultExportFromCjs(ECS_1);
 
-/** 
- * @module 
- * @internal 
- */
-
-
-
-
-// definition for this component's state object
-class PositionState {
-    constructor() {
-        /** Position in global coords (may be low precision) 
-         * @type {null | number[]} */
-        this.position = null;
-        this.width = 0.8;
-        this.height = 0.8;
-
-        /** Precise position in local coords
-         * @type {null | number[]} */
-        this._localPosition = null;
-
-        /** [x,y,z] in LOCAL COORDS
-         * @type {null | number[]} */
-        this._renderPosition = null;
-
-        /** [lo,lo,lo, hi,hi,hi] in LOCAL COORDS
-         * @type {null | number[]} */
-        this._extents = null;
-    }
-}
-
-
-
-
-/**
- * 	Component holding entity's position, width, and height.
- *  By convention, entity's "position" is the bottom center of its AABB
- * 
- *  Of the various properties, _localPosition is the "real", 
- *  single-source-of-truth position. Others are derived.
- *  Local coords are relative to `noa.worldOriginOffset`.
- * @param {import('..').Engine} noa
-*/
-
-function positionComp (noa) {
-
-    return {
-
-        name: 'position',
-
-        order: 60,
-
-        state: new PositionState,
-
-        onAdd: function (eid, state) {
-            // copy position into a plain array
-            var pos = [0, 0, 0];
-            if (state.position) glVec3.copy(pos, state.position);
-            state.position = pos;
-
-            state._localPosition = glVec3.create();
-            state._renderPosition = glVec3.create();
-            state._extents = new Float32Array(6);
-
-            // on init only, set local from global
-            noa.globalToLocal(state.position, null, state._localPosition);
-            glVec3.copy(state._renderPosition, state._localPosition);
-            updatePositionExtents(state);
-        },
-
-        onRemove: null,
-
-
-
-        system: function (dt, states) {
-            var off = noa.worldOriginOffset;
-            for (var i = 0; i < states.length; i++) {
-                var state = states[i];
-                glVec3.add(state.position, state._localPosition, off);
-                updatePositionExtents(state);
-            }
-        },
-
-
-    }
-}
-
-
-
-// update an entity's position state `_extents` 
-function updatePositionExtents(state) {
-    var hw = state.width / 2;
-    var lpos = state._localPosition;
-    var ext = state._extents;
-    ext[0] = lpos[0] - hw;
-    ext[1] = lpos[1];
-    ext[2] = lpos[2] - hw;
-    ext[3] = lpos[0] + hw;
-    ext[4] = lpos[1] + state.height;
-    ext[5] = lpos[2] + hw;
-}
-
-/** 
- * @module
- * @internal
- */
-
-
-
-class PhysicsState {
-    constructor() {
-        /** @type {import('voxel-physics-engine').RigidBody} */
-        this.body = null;
-    }
-}
-
-
-/**
- * Physics component, stores an entity's physics engbody.
- * @param {import('..').Engine} noa
-*/
-
-function physicsComp (noa) {
-
-    return {
-
-        name: 'physics',
-
-        order: 40,
-
-        state: new PhysicsState,
-
-        onAdd: function (entID, state) {
-            state.body = noa.physics.addBody();
-            // implicitly assume body has a position component, to get size
-            var posDat = noa.ents.getPositionData(state.__id);
-            setPhysicsFromPosition(state, posDat);
-        },
-
-
-        onRemove: function (entID, state) {
-            // update position before removing
-            // this lets entity wind up at e.g. the result of a collision
-            // even if physics component is removed in collision handler
-            if (noa.ents.hasPosition(state.__id)) {
-                var pdat = noa.ents.getPositionData(state.__id);
-                setPositionFromPhysics(state, pdat);
-                backtrackRenderPos(state, pdat, 0, false);
-            }
-            // Clear body callbacks before removal to prevent memory retention
-            if (state.body) {
-                state.body.onStep = null;
-                state.body.onCollide = null;
-            }
-            noa.physics.removeBody(state.body);
-        },
-
-
-        system: function (dt, states) {
-            for (var i = 0; i < states.length; i++) {
-                var state = states[i];
-                var pdat = noa.ents.getPositionData(state.__id);
-                if (!pdat) continue // defensive check for mid-frame deletion
-                setPositionFromPhysics(state, pdat);
-            }
-        },
-
-
-        renderSystem: function (dt, states) {
-
-            var tickPos = noa.positionInCurrentTick;
-            var tickTime = 1000 / noa.container._shell.tickRate;
-            tickTime *= noa.timeScale;
-            var tickMS = tickPos * tickTime;
-
-            // tickMS is time since last physics engine tick
-            // to avoid temporal aliasing, render the state as if lerping between
-            // the last position and the next one
-            // since the entity data is the "next" position this amounts to
-            // offsetting each entity into the past by tickRate - dt
-            // http://gafferongames.com/game-physics/fix-your-timestep/
-
-            var backtrackAmt = (tickMS - tickTime) / 1000;
-            for (var i = 0; i < states.length; i++) {
-                var state = states[i];
-                var id = state.__id;
-                var pdat = noa.ents.getPositionData(id);
-                if (!pdat) continue // defensive check for mid-frame deletion
-                var smoothed = noa.ents.cameraSmoothed(id);
-                backtrackRenderPos(state, pdat, backtrackAmt, smoothed);
-            }
-        }
-
-    }
-
-}
-
-
-
-// var offset = vec3.create()
-var local = glVec3.create();
-
-function setPhysicsFromPosition(physState, posState) {
-    var box = physState.body.aabb;
-    var ext = posState._extents;
-    glVec3.copy(box.base, ext);
-    glVec3.set(box.vec, posState.width, posState.height, posState.width);
-    glVec3.add(box.max, box.base, box.vec);
-}
-
-
-function setPositionFromPhysics(physState, posState) {
-    var base = physState.body.aabb.base;
-    var hw = posState.width / 2;
-    glVec3.set(posState._localPosition, base[0] + hw, base[1], base[2] + hw);
-}
-
-
-function backtrackRenderPos(physState, posState, backtrackAmt, smoothed) {
-    // pos = pos + backtrack * body.velocity
-    var vel = physState.body.velocity;
-    glVec3.scaleAndAdd(local, posState._localPosition, vel, backtrackAmt);
-
-    // smooth out update if component is present
-    // (this is set after sudden movements like auto-stepping)
-    if (smoothed) glVec3.lerp(local, posState._renderPosition, local, 0.3);
-
-    // copy values over to renderPosition, 
-    glVec3.copy(posState._renderPosition, local);
-}
-
 var pool$3 = {};
 
 var twiddle = {};
@@ -7507,6 +7276,237 @@ function applyMovementPhysics(dt, state, body) {
     }
 }
 
+/** 
+ * @module
+ * @internal
+ */
+
+
+
+class PhysicsState {
+    constructor() {
+        /** @type {import('voxel-physics-engine').RigidBody} */
+        this.body = null;
+    }
+}
+
+
+/**
+ * Physics component, stores an entity's physics engbody.
+ * @param {import('..').Engine} noa
+*/
+
+function physicsComp (noa) {
+
+    return {
+
+        name: 'physics',
+
+        order: 40,
+
+        state: new PhysicsState,
+
+        onAdd: function (entID, state) {
+            state.body = noa.physics.addBody();
+            // implicitly assume body has a position component, to get size
+            var posDat = noa.ents.getPositionData(state.__id);
+            setPhysicsFromPosition(state, posDat);
+        },
+
+
+        onRemove: function (entID, state) {
+            // update position before removing
+            // this lets entity wind up at e.g. the result of a collision
+            // even if physics component is removed in collision handler
+            if (noa.ents.hasPosition(state.__id)) {
+                var pdat = noa.ents.getPositionData(state.__id);
+                setPositionFromPhysics(state, pdat);
+                backtrackRenderPos(state, pdat, 0, false);
+            }
+            // Clear body callbacks before removal to prevent memory retention
+            if (state.body) {
+                state.body.onStep = null;
+                state.body.onCollide = null;
+            }
+            noa.physics.removeBody(state.body);
+        },
+
+
+        system: function (dt, states) {
+            for (var i = 0; i < states.length; i++) {
+                var state = states[i];
+                var pdat = noa.ents.getPositionData(state.__id);
+                if (!pdat) continue // defensive check for mid-frame deletion
+                setPositionFromPhysics(state, pdat);
+            }
+        },
+
+
+        renderSystem: function (dt, states) {
+
+            var tickPos = noa.positionInCurrentTick;
+            var tickTime = 1000 / noa.container._shell.tickRate;
+            tickTime *= noa.timeScale;
+            var tickMS = tickPos * tickTime;
+
+            // tickMS is time since last physics engine tick
+            // to avoid temporal aliasing, render the state as if lerping between
+            // the last position and the next one
+            // since the entity data is the "next" position this amounts to
+            // offsetting each entity into the past by tickRate - dt
+            // http://gafferongames.com/game-physics/fix-your-timestep/
+
+            var backtrackAmt = (tickMS - tickTime) / 1000;
+            for (var i = 0; i < states.length; i++) {
+                var state = states[i];
+                var id = state.__id;
+                var pdat = noa.ents.getPositionData(id);
+                if (!pdat) continue // defensive check for mid-frame deletion
+                var smoothed = noa.ents.cameraSmoothed(id);
+                backtrackRenderPos(state, pdat, backtrackAmt, smoothed);
+            }
+        }
+
+    }
+
+}
+
+
+
+// var offset = vec3.create()
+var local = glVec3.create();
+
+function setPhysicsFromPosition(physState, posState) {
+    var box = physState.body.aabb;
+    var ext = posState._extents;
+    glVec3.copy(box.base, ext);
+    glVec3.set(box.vec, posState.width, posState.height, posState.width);
+    glVec3.add(box.max, box.base, box.vec);
+}
+
+
+function setPositionFromPhysics(physState, posState) {
+    var base = physState.body.aabb.base;
+    var hw = posState.width / 2;
+    glVec3.set(posState._localPosition, base[0] + hw, base[1], base[2] + hw);
+}
+
+
+function backtrackRenderPos(physState, posState, backtrackAmt, smoothed) {
+    // pos = pos + backtrack * body.velocity
+    var vel = physState.body.velocity;
+    glVec3.scaleAndAdd(local, posState._localPosition, vel, backtrackAmt);
+
+    // smooth out update if component is present
+    // (this is set after sudden movements like auto-stepping)
+    if (smoothed) glVec3.lerp(local, posState._renderPosition, local, 0.3);
+
+    // copy values over to renderPosition, 
+    glVec3.copy(posState._renderPosition, local);
+}
+
+/** 
+ * @module 
+ * @internal 
+ */
+
+
+
+
+// definition for this component's state object
+class PositionState {
+    constructor() {
+        /** Position in global coords (may be low precision) 
+         * @type {null | number[]} */
+        this.position = null;
+        this.width = 0.8;
+        this.height = 0.8;
+
+        /** Precise position in local coords
+         * @type {null | number[]} */
+        this._localPosition = null;
+
+        /** [x,y,z] in LOCAL COORDS
+         * @type {null | number[]} */
+        this._renderPosition = null;
+
+        /** [lo,lo,lo, hi,hi,hi] in LOCAL COORDS
+         * @type {null | number[]} */
+        this._extents = null;
+    }
+}
+
+
+
+
+/**
+ * 	Component holding entity's position, width, and height.
+ *  By convention, entity's "position" is the bottom center of its AABB
+ * 
+ *  Of the various properties, _localPosition is the "real", 
+ *  single-source-of-truth position. Others are derived.
+ *  Local coords are relative to `noa.worldOriginOffset`.
+ * @param {import('..').Engine} noa
+*/
+
+function positionComp (noa) {
+
+    return {
+
+        name: 'position',
+
+        order: 60,
+
+        state: new PositionState,
+
+        onAdd: function (eid, state) {
+            // copy position into a plain array
+            var pos = [0, 0, 0];
+            if (state.position) glVec3.copy(pos, state.position);
+            state.position = pos;
+
+            state._localPosition = glVec3.create();
+            state._renderPosition = glVec3.create();
+            state._extents = new Float32Array(6);
+
+            // on init only, set local from global
+            noa.globalToLocal(state.position, null, state._localPosition);
+            glVec3.copy(state._renderPosition, state._localPosition);
+            updatePositionExtents(state);
+        },
+
+        onRemove: null,
+
+
+
+        system: function (dt, states) {
+            var off = noa.worldOriginOffset;
+            for (var i = 0; i < states.length; i++) {
+                var state = states[i];
+                glVec3.add(state.position, state._localPosition, off);
+                updatePositionExtents(state);
+            }
+        },
+
+
+    }
+}
+
+
+
+// update an entity's position state `_extents` 
+function updatePositionExtents(state) {
+    var hw = state.width / 2;
+    var lpos = state._localPosition;
+    var ext = state._extents;
+    ext[0] = lpos[0] - hw;
+    ext[1] = lpos[1];
+    ext[2] = lpos[2] - hw;
+    ext[3] = lpos[0] + hw;
+    ext[4] = lpos[1] + state.height;
+    ext[5] = lpos[2] + hw;
+}
+
 /**
  * 
  * Input processing component - gets (key) input state and  
@@ -7730,64 +7730,805 @@ function smoothCameraComp (noa) {
     }
 }
 
+/**
+ * Entity utilities - types, defaults, and hot-path helpers.
+ * @module entities/entitiesUtils
+ */
+
+
+/**
+ * Default options for the Entities module.
+ * @typedef {object} EntitiesOptions
+ * @property {number} [shadowDistance=10] - Distance for entity shadow rendering
+ */
+
+/** @type {EntitiesOptions} */
 var defaultOptions$3 = {
     shadowDistance: 10,
 };
 
-// Cached arrays for entity world position hot paths
+
+/**
+ * Cached array for entity world position hot paths.
+ * Used by getWorldPositionCached - do not store references to this array.
+ * @internal
+ */
 var _cachedEntityWorldPos = [0, 0, 0];
-var _boundsCheckPos = [0, 0, 0];  // Separate cache for isInWorldBounds to avoid corruption
+
+/**
+ * Separate cache for isInWorldBounds to avoid corrupting user's
+ * getWorldPositionCached() result during bounds checking.
+ * @internal
+ */
+var _boundsCheckPos = [0, 0, 0];
+
+
+/**
+ * Compare two extent arrays for overlap.
+ * Extents are [minX, minY, minZ, maxX, maxY, maxZ].
+ *
+ * @param {number[]} extA
+ * @param {number[]} extB
+ * @returns {boolean}
+ */
+function extentsOverlap(extA, extB) {
+    if (extA[0] > extB[3]) return false
+    if (extA[1] > extB[4]) return false
+    if (extA[2] > extB[5]) return false
+    if (extA[3] < extB[0]) return false
+    if (extA[4] < extB[1]) return false
+    if (extA[5] < extB[2]) return false
+    return true
+}
+
+
+/**
+ * Safety helper for origin rebasing - nudges position away from voxel
+ * boundaries so floating point error doesn't carry us across.
+ *
+ * @internal
+ * @param {number[]} pos
+ * @param {number} index
+ * @param {number} dmin
+ * @param {number} dmax
+ * @param {number} id - Entity ID (unused, kept for debugging)
+ */
+function nudgePosition(pos, index, dmin, dmax, id) {
+    var min = pos[index] + dmin;
+    var max = pos[index] + dmax;
+    if (Math.abs(min - Math.round(min)) < 0.002) pos[index] += 0.002;
+    if (Math.abs(max - Math.round(max)) < 0.001) pos[index] -= 0.001;
+}
+
+/**
+ * Entity accessor factory - creates accessor methods on Entities instance.
+ * Called once at construction time, no runtime overhead.
+ * @module entities/entityAccessors
+ *
+ * These accessors provide convenient getters for component state.
+ * They are moderately faster than `ents.getState(componentName)`.
+ */
+
+
+
+/**
+ * Sets up all entity accessor methods on the Entities instance.
+ * This runs once during construction - no runtime overhead.
+ *
+ * @param {import('./index.js').Entities} ents
+ */
+function setupAccessors(ents) {
+    var names = ents.names;
+
+    // ============ COMPONENT EXISTENCE CHECKS ============
+
+    /** @internal */
+    ents.cameraSmoothed = ents.getComponentAccessor(names.smoothCamera);
+
+    /**
+     * Returns whether the entity has a physics body.
+     * @type {(id:number) => boolean}
+     */
+    ents.hasPhysics = ents.getComponentAccessor(names.physics);
+
+    /**
+     * Returns whether the entity has a position.
+     * @type {(id:number) => boolean}
+     */
+    ents.hasPosition = ents.getComponentAccessor(names.position);
+
+    /**
+     * Returns whether the entity has a mesh.
+     * @type {(id:number) => boolean}
+     */
+    ents.hasMesh = ents.getComponentAccessor(names.mesh);
+
+
+    // ============ COMPONENT STATE GETTERS ============
+
+    /**
+     * Returns the entity's position component state.
+     * @type {(id:number) => null | import("../../components/position.js").PositionState}
+     */
+    ents.getPositionData = ents.getStateAccessor(names.position);
+
+    /**
+     * Returns the entity's position vector.
+     * @type {(id:number) => number[] | null}
+     */
+    ents.getPosition = (id) => {
+        var state = ents.getPositionData(id);
+        return (state) ? state.position : null
+    };
+
+    /**
+     * Get the entity's `physics` component state.
+     * @type {(id:number) => null | import("../../components/physics.js").PhysicsState}
+     */
+    ents.getPhysics = ents.getStateAccessor(names.physics);
+
+    /**
+     * Returns the entity's physics body.
+     * Note: will throw if the entity doesn't have the position component!
+     * @type {(id:number) => null | import("voxel-physics-engine").RigidBody}
+     */
+    ents.getPhysicsBody = (id) => {
+        var state = ents.getPhysics(id);
+        return (state) ? state.body : null
+    };
+
+    /**
+     * Returns the entity's axis-aligned bounding box (AABB) in local coordinates.
+     * The AABB represents the entity's collision box position relative to the
+     * current world origin offset. To get world coordinates, add noa.worldOriginOffset.
+     *
+     * **Note:** Returns a direct reference to the physics body's internal AABB.
+     * Modifying the returned object will mutate the entity's physics state.
+     *
+     * @type {(id:number) => null | {base: number[], max: number[]}}
+     */
+    ents.getAABB = (id) => {
+        var body = ents.getPhysicsBody(id);
+        if (!body || !body.aabb) return null
+        return body.aabb
+    };
+
+    /**
+     * Returns the entity's `mesh` component state.
+     * @type {(id:number) => {mesh:any, offset:number[]}}
+     */
+    ents.getMeshData = ents.getStateAccessor(names.mesh);
+
+    /**
+     * Returns the entity's `movement` component state.
+     * @type {(id:number) => import('../../components/movement.js').MovementState}
+     */
+    ents.getMovement = ents.getStateAccessor(names.movement);
+
+    /**
+     * Returns the entity's `collideTerrain` component state.
+     * @type {(id:number) => {callback: function}}
+     */
+    ents.getCollideTerrain = ents.getStateAccessor(names.collideTerrain);
+
+    /**
+     * Returns the entity's `collideEntities` component state.
+     * @type {(id:number) => {
+     *      cylinder:boolean, collideBits:number,
+     *      collideMask:number, callback: function}}
+     */
+    ents.getCollideEntities = ents.getStateAccessor(names.collideEntities);
+
+    /**
+     * Returns the entity's `label` component state.
+     * @type {(id:number) => null | import("../../components/label.js").LabelState}
+     */
+    ents.getLabel = ents.getStateAccessor(names.label);
+
+
+    // ============ WORLD POSITION HELPERS ============
+
+    /**
+     * Returns the entity's position in world coordinates.
+     * Returns center X/Z and base Y of the entity's AABB.
+     *
+     * @example
+     * const [worldX, worldY, worldZ] = noa.entities.getWorldPosition(playerId)
+     *
+     * @type {(id:number) => number[] | null}
+     */
+    ents.getWorldPosition = (id) => {
+        var aabb = ents.getAABB(id);
+        if (!aabb) return null
+        var off = ents.noa.worldOriginOffset;
+        return [
+            (aabb.base[0] + aabb.max[0]) / 2 + off[0],
+            aabb.base[1] + off[1],
+            (aabb.base[2] + aabb.max[2]) / 2 + off[2]
+        ]
+    };
+
+    /**
+     * Returns the entity's world position (cached version for hot paths).
+     * Use this in per-frame updates to avoid GC pressure.
+     * WARNING: Returns shared internal array - do not store the result!
+     *
+     * @type {(id:number, out?: number[]) => number[] | null}
+     */
+    ents.getWorldPositionCached = (id, out) => {
+        var aabb = ents.getAABB(id);
+        if (!aabb) return null
+        var off = ents.noa.worldOriginOffset;
+        out = out || _cachedEntityWorldPos;
+        out[0] = (aabb.base[0] + aabb.max[0]) / 2 + off[0];
+        out[1] = aabb.base[1] + off[1];
+        out[2] = (aabb.base[2] + aabb.max[2]) / 2 + off[2];
+        return out
+    };
+
+    /**
+     * Check if an entity is within world-coordinate bounds.
+     *
+     * @example
+     * const inRiver = noa.entities.isInWorldBounds(playerId, {
+     *     xMin: -5, xMax: 5,
+     *     yMin: 0, yMax: 3,
+     *     zMin: -50, zMax: 50
+     * })
+     *
+     * @type {(id:number, bounds: {xMin?:number, xMax?:number, yMin?:number, yMax?:number, zMin?:number, zMax?:number}) => boolean}
+     */
+    ents.isInWorldBounds = (id, bounds) => {
+        // Uses separate cache to avoid corrupting user's getWorldPositionCached() result
+        var pos = ents.getWorldPositionCached(id, _boundsCheckPos);
+        if (!pos) return false
+        if (bounds.xMin !== undefined && pos[0] < bounds.xMin) return false
+        if (bounds.xMax !== undefined && pos[0] > bounds.xMax) return false
+        if (bounds.yMin !== undefined && pos[1] < bounds.yMin) return false
+        if (bounds.yMax !== undefined && pos[1] > bounds.yMax) return false
+        if (bounds.zMin !== undefined && pos[2] < bounds.zMin) return false
+        if (bounds.zMax !== undefined && pos[2] > bounds.zMax) return false
+        return true
+    };
+
+
+    // ============ COLLISION CALLBACK ============
+
+    /**
+     * Pairwise collideEntities event - assign your own function to this
+     * property if you want to handle entity-entity overlap events.
+     * @type {(id1:number, id2:number) => void}
+     */
+    ents.onPairwiseEntityCollision = function (id1, id2) { };
+}
+
+
+/**
+ * Clears accessor references during disposal.
+ *
+ * @param {import('./index.js').Entities} ents
+ */
+function clearAccessors(ents) {
+    ents.cameraSmoothed = null;
+    ents.hasPhysics = null;
+    ents.hasPosition = null;
+    ents.getPositionData = null;
+    ents.getPosition = null;
+    ents.getPhysics = null;
+    ents.getPhysicsBody = null;
+    ents.getAABB = null;
+    ents.hasMesh = null;
+    ents.getMeshData = null;
+    ents.getMovement = null;
+    ents.getCollideTerrain = null;
+    ents.getCollideEntities = null;
+    ents.getLabel = null;
+    ents.getWorldPosition = null;
+    ents.getWorldPositionCached = null;
+    ents.isInWorldBounds = null;
+    ents.onPairwiseEntityCollision = null;
+}
+
+/**
+ * Entity position management - setting positions and derived state updates.
+ * @module entities/entityPositions
+ */
+
+
+
+/**
+ * Position management class for the Entities module.
+ * Handles setting entity positions and updating all derived state.
+ */
+class EntityPositions {
+
+    /**
+     * @param {import('./index.js').Entities} entities
+     */
+    constructor(entities) {
+        /** @internal @type {import('./index.js').Entities} */
+        this._entities = entities;
+    }
+
+    /**
+     * Set an entity's position, and update all derived state.
+     *
+     * In general, always use this to set an entity's position unless
+     * you're familiar with engine internals.
+     *
+     * @example
+     * noa.ents.setPosition(playerEntity, [5, 6, 7])
+     * noa.ents.setPosition(playerEntity, 5, 6, 7)  // also works
+     *
+     * @param {number} id
+     * @param {number|number[]} pos
+     * @param {number} [y=0]
+     * @param {number} [z=0]
+     */
+    setPosition(id, pos, y = 0, z = 0) {
+        if (typeof pos === 'number') pos = [pos, y, z];
+        var loc = this._entities.noa.globalToLocal(pos, null, []);
+        this._localSetPosition(id, loc);
+    }
+
+    /**
+     * Set an entity's size.
+     *
+     * @param {number} id
+     * @param {number} xs
+     * @param {number} ys
+     * @param {number} zs
+     */
+    setEntitySize(id, xs, ys, zs) {
+        var posDat = this._entities.getPositionData(id);
+        posDat.width = (xs + zs) / 2;
+        posDat.height = ys;
+        this._updateDerivedPositionData(id, posDat);
+    }
+
+    /**
+     * Called when engine rebases its local coords.
+     * @internal
+     * @param {number[]} delta
+     */
+    _rebaseOrigin(delta) {
+        var ents = this._entities;
+        for (var state of ents.getStatesList(ents.names.position)) {
+            var locPos = state._localPosition;
+            var hw = state.width / 2;
+            nudgePosition(locPos, 0, -hw, hw, state.__id);
+            nudgePosition(locPos, 1, 0, state.height, state.__id);
+            nudgePosition(locPos, 2, -hw, hw, state.__id);
+            glVec3.sub(locPos, locPos, delta);
+            this._updateDerivedPositionData(state.__id, state);
+        }
+    }
+
+    /**
+     * @internal
+     * @param {number} id
+     * @returns {number[]}
+     */
+    _localGetPosition(id) {
+        return this._entities.getPositionData(id)._localPosition
+    }
+
+    /**
+     * @internal
+     * @param {number} id
+     * @param {number[]} pos
+     */
+    _localSetPosition(id, pos) {
+        var posDat = this._entities.getPositionData(id);
+        glVec3.copy(posDat._localPosition, pos);
+        this._updateDerivedPositionData(id, posDat);
+    }
+
+    /**
+     * Helper to update everything derived from `_localPosition`.
+     * @internal
+     * @param {number} id
+     * @param {import('../../components/position.js').PositionState} posDat
+     */
+    _updateDerivedPositionData(id, posDat) {
+        var ents = this._entities;
+        glVec3.copy(posDat._renderPosition, posDat._localPosition);
+        var offset = ents.noa.worldOriginOffset;
+        glVec3.add(posDat.position, posDat._localPosition, offset);
+        updatePositionExtents(posDat);
+        var physDat = ents.getPhysics(id);
+        if (physDat) setPhysicsFromPosition(physDat, posDat);
+    }
+}
+
+/**
+ * Entity query and spatial search functionality.
+ * @module entities/entityQueries
+ */
+
+
+
+/**
+ * Query object for iterating over entities with specific components.
+ * Supports iterator protocol, forEach, and component chaining.
+ *
+ * @example
+ * // Iterate over all entities with physics
+ * for (const { id, state } of noa.entities.query('physics')) {
+ *   console.log(id, state.body)
+ * }
+ *
+ * // With forEach
+ * noa.entities.query('physics').forEach(({ id, state }) => {
+ *   console.log(id, state)
+ * })
+ *
+ * // Chain multiple components
+ * noa.entities.query('physics').withComponent('mesh').forEach(...)
+ */
+class EntityQueryImpl {
+
+    /**
+     * @param {import('./index.js').Entities} ecs
+     * @param {string} name
+     */
+    constructor(ecs, name) {
+        /** @internal */
+        this._ecs = ecs;
+        /** @internal */
+        this._names = [name];
+    }
+
+    *[Symbol.iterator]() {
+        const states = this._ecs.getStatesList(this._names[0]);
+        for (const state of states) {
+            if (!state) continue
+            const id = state.__id;
+            if (this._names.length === 1) {
+                yield { id, state };
+            } else {
+                let merged = { ...state };
+                let valid = true;
+                for (let i = 1; i < this._names.length; i++) {
+                    const other = this._ecs.getState(id, this._names[i]);
+                    if (!other) { valid = false; break }
+                    merged = { ...merged, ...other };
+                }
+                if (valid) yield { id, state: merged };
+            }
+        }
+    }
+
+    /**
+     * Chain another component requirement to the query.
+     * @param {string} name - Component name
+     * @returns {EntityQueryImpl}
+     */
+    withComponent(name) {
+        const q = new EntityQueryImpl(this._ecs, this._names[0]);
+        q._names = [...this._names, name];
+        return q
+    }
+
+    /**
+     * Iterate with a callback function.
+     * @param {function({id:number, state:object}):void} cb
+     */
+    forEach(cb) {
+        for (const r of this) cb(r);
+    }
+
+    /**
+     * Get array of entity IDs matching the query.
+     * @returns {number[]}
+     */
+    getIds() {
+        return Array.from(this).map(r => r.id)
+    }
+
+    /**
+     * Count entities matching the query.
+     * @returns {number}
+     */
+    count() {
+        let c = 0;
+        for (const _ of this) c++;
+        return c
+    }
+}
+
+
+/**
+ * Spatial query methods for entity lookups.
+ */
+class EntitySpatialQueries {
+
+    /**
+     * @param {import('./index.js').Entities} entities
+     */
+    constructor(entities) {
+        /** @internal @type {import('./index.js').Entities} */
+        this._entities = entities;
+    }
+
+    /**
+     * Checks whether a voxel is obstructed by any entity
+     * (with the `collidesTerrain` component).
+     *
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {boolean}
+     */
+    isTerrainBlocked(x, y, z) {
+        var ents = this._entities;
+        var off = ents.noa.worldOriginOffset;
+        var xlocal = Math.floor(x - off[0]);
+        var ylocal = Math.floor(y - off[1]);
+        var zlocal = Math.floor(z - off[2]);
+        var blockExt = [
+            xlocal + 0.001, ylocal + 0.001, zlocal + 0.001,
+            xlocal + 0.999, ylocal + 0.999, zlocal + 0.999,
+        ];
+        var list = ents.getStatesList(ents.names.collideTerrain);
+        for (var i = 0; i < list.length; i++) {
+            var id = list[i].__id;
+            var ext = ents.getPositionData(id)._extents;
+            if (extentsOverlap(blockExt, ext)) return true
+        }
+        return false
+    }
+
+    /**
+     * Gets an array of all entities overlapping the given AABB.
+     *
+     * @param {{ base: number[], max: number[] }} box
+     * @param {string} [withComponent] - Optional component filter
+     * @returns {number[]}
+     */
+    getEntitiesInAABB(box, withComponent) {
+        var ents = this._entities;
+        var off = ents.noa.worldOriginOffset;
+        var testExtents = [
+            box.base[0] - off[0], box.base[1] - off[1], box.base[2] - off[2],
+            box.max[0] - off[0], box.max[1] - off[1], box.max[2] - off[2],
+        ];
+
+        var entStates;
+        if (withComponent) {
+            entStates = [];
+            for (var compState of ents.getStatesList(withComponent)) {
+                var pdat = ents.getPositionData(compState.__id);
+                if (pdat) entStates.push(pdat);
+            }
+        } else {
+            entStates = ents.getStatesList(ents.names.position);
+        }
+
+        var hits = [];
+        for (var i = 0; i < entStates.length; i++) {
+            var state = entStates[i];
+            if (extentsOverlap(testExtents, state._extents)) {
+                hits.push(state.__id);
+            }
+        }
+        return hits
+    }
+}
+
+/**
+ * Entities module - manages entities and components.
+ * @module entities
+ */
+
 
 
 /**
  * `noa.entities` - manages entities and components.
- * 
- * This class extends [ent-comp](https://github.com/fenomas/ent-comp), 
- * a general-purpose ECS. It's also decorated with noa-specific helpers and 
+ *
+ * This class extends [ent-comp](https://github.com/fenomas/ent-comp),
+ * a general-purpose ECS. It's also decorated with noa-specific helpers and
  * accessor functions for querying entity positions, etc.
- * 
- * Expects entity definitions in a specific format - see source `components` 
+ *
+ * Expects entity definitions in a specific format - see source `components`
  * folder for examples.
- * 
+ *
  * This module uses the following default options (from the options
  * object passed to the {@link Engine}):
- * 
+ *
  * ```js
  * var defaults = {
  *     shadowDistance: 10,
  * }
  * ```
-*/
-
+ */
 class Entities extends ECS {
+
+    // ============ ACCESSOR PROPERTY DECLARATIONS ============
+    // These are assigned dynamically in setupAccessors() but declared
+    // here for TypeScript recognition.
+
+    /** @internal @type {(id:number) => boolean} */
+    cameraSmoothed
+
+    /**
+     * Returns whether the entity has a physics body.
+     * @type {(id:number) => boolean}
+     */
+    hasPhysics
+
+    /**
+     * Returns whether the entity has a position.
+     * @type {(id:number) => boolean}
+     */
+    hasPosition
+
+    /**
+     * Returns whether the entity has a mesh.
+     * @type {(id:number) => boolean}
+     */
+    hasMesh
+
+    /**
+     * Returns the entity's position component state.
+     * @type {(id:number) => null | import("../../components/position.js").PositionState}
+     */
+    getPositionData
+
+    /**
+     * Returns the entity's position vector.
+     * @type {(id:number) => number[] | null}
+     */
+    getPosition
+
+    /**
+     * Get the entity's `physics` component state.
+     * @type {(id:number) => null | import("../../components/physics.js").PhysicsState}
+     */
+    getPhysics
+
+    /**
+     * Returns the entity's physics body.
+     * Note, will throw if the entity doesn't have the position component!
+     * @type {(id:number) => null | import("voxel-physics-engine").RigidBody}
+     */
+    getPhysicsBody
+
+    /**
+     * Returns the entity's axis-aligned bounding box (AABB) in local coordinates.
+     * The AABB represents the entity's collision box position relative to the
+     * current world origin offset. To get world coordinates, add noa.worldOriginOffset.
+     *
+     * **Note:** Returns a direct reference to the physics body's internal AABB.
+     * Modifying the returned object will mutate the entity's physics state.
+     *
+     * @type {(id:number) => null | {base: number[], max: number[]}}
+     */
+    getAABB
+
+    /**
+     * Returns the entity's `mesh` component state.
+     * @type {(id:number) => {mesh:any, offset:number[]}}
+     */
+    getMeshData
+
+    /**
+     * Returns the entity's `movement` component state.
+     * @type {(id:number) => import('../../components/movement.js').MovementState}
+     */
+    getMovement
+
+    /**
+     * Returns the entity's `collideTerrain` component state.
+     * @type {(id:number) => {callback: function}}
+     */
+    getCollideTerrain
+
+    /**
+     * Returns the entity's `collideEntities` component state.
+     * @type {(id:number) => {
+     *      cylinder:boolean, collideBits:number,
+     *      collideMask:number, callback: function}}
+     */
+    getCollideEntities
+
+    /**
+     * Returns the entity's `label` component state.
+     * @type {(id:number) => null | import("../../components/label.js").LabelState}
+     */
+    getLabel
+
+    /**
+     * Returns the entity's position in world coordinates.
+     * Returns center X/Z and base Y of the entity's AABB.
+     *
+     * @example
+     * const [worldX, worldY, worldZ] = noa.entities.getWorldPosition(playerId)
+     *
+     * @type {(id:number) => number[] | null}
+     */
+    getWorldPosition
+
+    /**
+     * Returns the entity's world position (cached version for hot paths).
+     * Use this in per-frame updates to avoid GC pressure.
+     * WARNING: Returns shared internal array - do not store the result!
+     *
+     * @type {(id:number, out?: number[]) => number[] | null}
+     */
+    getWorldPositionCached
+
+    /**
+     * Check if an entity is within world-coordinate bounds.
+     *
+     * @example
+     * const inRiver = noa.entities.isInWorldBounds(playerId, {
+     *     xMin: -5, xMax: 5,
+     *     yMin: 0, yMax: 3,
+     *     zMin: -50, zMax: 50
+     * })
+     *
+     * @type {(id:number, bounds: {xMin?:number, xMax?:number, yMin?:number, yMax?:number, zMin?:number, zMax?:number}) => boolean}
+     */
+    isInWorldBounds
+
+    /**
+     * Pairwise collideEntities event - assign your own function to this
+     * property if you want to handle entity-entity overlap events.
+     * @type {(id1:number, id2:number) => void}
+     */
+    onPairwiseEntityCollision
 
 
     /** @internal */
     constructor(noa, opts) {
         super();
         opts = Object.assign({}, defaultOptions$3, opts);
-        // optional arguments to supply to component creation functions
-        var componentArgs = {
-            'shadow': opts.shadowDistance,
-        };
 
-        /** 
+        /**
          * @internal
-         * @type {import('../index').Engine}
-        */
+         * @type {import('../../index.js').Engine}
+         */
         this.noa = noa;
 
         /** @internal */
         this._disposed = false;
 
-        /** Hash containing the component names of built-in components.
-         * @type {{ [key:string]: string }} 
-        */
+        /**
+         * Hash containing the component names of built-in components.
+         * @type {{ [key:string]: string }}
+         */
         this.names = {};
 
+        // Register all built-in components
+        this._registerComponents(opts);
 
-        // call `createComponent` on all component definitions, and
-        // store their names in ents.names
+        // Initialize sub-modules
+        /** @internal */
+        this._positions = new EntityPositions(this);
+        /** @internal */
+        this._spatialQueries = new EntitySpatialQueries(this);
+
+        // Setup all accessor methods (runs once, no runtime overhead)
+        setupAccessors(this);
+    }
+
+
+    // ============ COMPONENT REGISTRATION ============
+
+    /**
+     * Register all built-in components.
+     * Calls `createComponent` on all component definitions, and
+     * stores their names in `ents.names`.
+     * @internal
+     * @param {import('./entitiesUtils.js').EntitiesOptions} opts
+     */
+    _registerComponents(opts) {
+        // optional arguments to supply to component creation functions
+        var componentArgs = {
+            'shadow': opts.shadowDistance,
+        };
+
         var compDefs = {
             collideEntities: collideEntitiesComp,
             collideTerrain: collideTerrainComp,
@@ -7806,198 +8547,13 @@ class Entities extends ECS {
         Object.keys(compDefs).forEach(bareName => {
             var arg = componentArgs[bareName] || undefined;
             var compFn = compDefs[bareName];
-            var compDef = compFn(noa, arg);
+            var compDef = compFn(this.noa, arg);
             this.names[bareName] = this.createComponent(compDef);
         });
-
-
-
-        /*
-         *
-         *
-         * 
-         *          ENTITY ACCESSORS
-         *
-         * A whole bunch of getters and such for accessing component state.
-         * These are moderately faster than `ents.getState(whatever)`.
-         * 
-         * 
-         * 
-        */
-
-        /** @internal */
-        this.cameraSmoothed = this.getComponentAccessor(this.names.smoothCamera);
-
-
-        /**
-         * Returns whether the entity has a physics body
-         * @type {(id:number) => boolean}
-        */
-        this.hasPhysics = this.getComponentAccessor(this.names.physics);
-
-        /**
-         * Returns whether the entity has a position
-         * @type {(id:number) => boolean}
-        */
-        this.hasPosition = this.getComponentAccessor(this.names.position);
-
-        /**
-         * Returns the entity's position component state
-         * @type {(id:number) => null | import("../components/position").PositionState} 
-        */
-        this.getPositionData = this.getStateAccessor(this.names.position);
-
-        /**
-         * Returns the entity's position vector.
-         * @type {(id:number) => number[]}
-        */
-        this.getPosition = (id) => {
-            var state = this.getPositionData(id);
-            return (state) ? state.position : null
-        };
-
-        /**
-         * Get the entity's `physics` component state.
-         * @type {(id:number) => null | import("../components/physics").PhysicsState} 
-        */
-        this.getPhysics = this.getStateAccessor(this.names.physics);
-
-        /**
-         * Returns the entity's physics body
-         * Note, will throw if the entity doesn't have the position component!
-         * @type {(id:number) => null | import("voxel-physics-engine").RigidBody}
-        */
-        this.getPhysicsBody = (id) => {
-            var state = this.getPhysics(id);
-            return (state) ? state.body : null
-        };
-
-        /**
-         * Returns the entity's axis-aligned bounding box (AABB) in local coordinates.
-         * The AABB represents the entity's collision box position relative to the
-         * current world origin offset. To get world coordinates, add noa.worldOriginOffset.
-         *
-         * **Note:** Returns a direct reference to the physics body's internal AABB.
-         * Modifying the returned object will mutate the entity's physics state.
-         *
-         * @type {(id:number) => null | {base: number[], max: number[]}}
-        */
-        this.getAABB = (id) => {
-            var body = this.getPhysicsBody(id);
-            if (!body || !body.aabb) return null
-            return body.aabb
-        };
-
-        /**
-         * Returns the entity's position in world coordinates.
-         * Returns center X/Z and base Y of the entity's AABB.
-         *
-         * @example
-         * const [worldX, worldY, worldZ] = noa.entities.getWorldPosition(playerId)
-         *
-         * @type {(id:number) => number[] | null}
-         */
-        this.getWorldPosition = (id) => {
-            var aabb = this.getAABB(id);
-            if (!aabb) return null
-            var off = this.noa.worldOriginOffset;
-            return [
-                (aabb.base[0] + aabb.max[0]) / 2 + off[0],
-                aabb.base[1] + off[1],
-                (aabb.base[2] + aabb.max[2]) / 2 + off[2]
-            ]
-        };
-
-        /**
-         * Returns the entity's world position (cached version for hot paths).
-         * Use this in per-frame updates to avoid GC pressure.
-         * WARNING: Returns shared internal array - do not store the result!
-         *
-         * @type {(id:number, out?: number[]) => number[] | null}
-         */
-        this.getWorldPositionCached = (id, out) => {
-            var aabb = this.getAABB(id);
-            if (!aabb) return null
-            var off = this.noa.worldOriginOffset;
-            out = out || _cachedEntityWorldPos;
-            out[0] = (aabb.base[0] + aabb.max[0]) / 2 + off[0];
-            out[1] = aabb.base[1] + off[1];
-            out[2] = (aabb.base[2] + aabb.max[2]) / 2 + off[2];
-            return out
-        };
-
-        /**
-         * Check if an entity is within world-coordinate bounds.
-         *
-         * @example
-         * const inRiver = noa.entities.isInWorldBounds(playerId, {
-         *     xMin: -5, xMax: 5,
-         *     yMin: 0, yMax: 3,
-         *     zMin: -50, zMax: 50
-         * })
-         *
-         * @type {(id:number, bounds: {xMin?:number, xMax?:number, yMin?:number, yMax?:number, zMin?:number, zMax?:number}) => boolean}
-         */
-        this.isInWorldBounds = (id, bounds) => {
-            // Uses separate cache to avoid corrupting user's getWorldPositionCached() result
-            var pos = this.getWorldPositionCached(id, _boundsCheckPos);
-            if (!pos) return false
-            if (bounds.xMin !== undefined && pos[0] < bounds.xMin) return false
-            if (bounds.xMax !== undefined && pos[0] > bounds.xMax) return false
-            if (bounds.yMin !== undefined && pos[1] < bounds.yMin) return false
-            if (bounds.yMax !== undefined && pos[1] > bounds.yMax) return false
-            if (bounds.zMin !== undefined && pos[2] < bounds.zMin) return false
-            if (bounds.zMax !== undefined && pos[2] > bounds.zMax) return false
-            return true
-        };
-
-        /**
-         * Returns whether the entity has a mesh
-         * @type {(id:number) => boolean}
-        */
-        this.hasMesh = this.getComponentAccessor(this.names.mesh);
-
-        /**
-         * Returns the entity's `mesh` component state
-         * @type {(id:number) => {mesh:any, offset:number[]}}
-        */
-        this.getMeshData = this.getStateAccessor(this.names.mesh);
-
-        /**
-         * Returns the entity's `movement` component state
-         * @type {(id:number) => import('../components/movement').MovementState}
-        */
-        this.getMovement = this.getStateAccessor(this.names.movement);
-
-        /**
-         * Returns the entity's `collideTerrain` component state
-         * @type {(id:number) => {callback: function}}
-        */
-        this.getCollideTerrain = this.getStateAccessor(this.names.collideTerrain);
-
-        /**
-         * Returns the entity's `collideEntities` component state
-         * @type {(id:number) => {
-         *      cylinder:boolean, collideBits:number, 
-         *      collideMask:number, callback: function}}
-        */
-        this.getCollideEntities = this.getStateAccessor(this.names.collideEntities);
-
-        /**
-         * Returns the entity's `label` component state
-         * @type {(id:number) => null | import("../components/label").LabelState}
-         */
-        this.getLabel = this.getStateAccessor(this.names.label);
-
-
-        /**
-         * Pairwise collideEntities event - assign your own function to this
-         * property if you want to handle entity-entity overlap events.
-         * @type {(id1:number, id2:number) => void}
-         */
-        this.onPairwiseEntityCollision = function (id1, id2) { };
     }
 
+
+    // ============ QUERY API ============
 
     /**
      * Query entities by component name.
@@ -8025,183 +8581,137 @@ class Entities extends ECS {
     }
 
 
+    // ============ POSITION API ============
 
-
-    /*
-     * 
-     * 
-     *      PUBLIC ENTITY STATE ACCESSORS
-     * 
-     * 
-    */
-
-
-    /** Set an entity's position, and update all derived state.
-     * 
+    /**
+     * Set an entity's position, and update all derived state.
+     *
      * In general, always use this to set an entity's position unless
      * you're familiar with engine internals.
-     * 
-     * ```js
+     *
+     * @example
      * noa.ents.setPosition(playerEntity, [5, 6, 7])
      * noa.ents.setPosition(playerEntity, 5, 6, 7)  // also works
-     * ```
-     * 
+     *
      * @param {number} id
+     * @param {number|number[]} pos
+     * @param {number} [y=0]
+     * @param {number} [z=0]
      */
     setPosition(id, pos, y = 0, z = 0) {
-        if (typeof pos === 'number') pos = [pos, y, z];
-        // convert to local and defer impl
-        var loc = this.noa.globalToLocal(pos, null, []);
-        this._localSetPosition(id, loc);
+        this._positions.setPosition(id, pos, y, z);
     }
 
-    /** Set an entity's size 
+    /**
+     * Set an entity's size.
+     *
+     * @param {number} id
      * @param {number} xs
      * @param {number} ys
      * @param {number} zs
-    */
+     */
     setEntitySize(id, xs, ys, zs) {
-        var posDat = this.getPositionData(id);
-        posDat.width = (xs + zs) / 2;
-        posDat.height = ys;
-        this._updateDerivedPositionData(id, posDat);
+        this._positions.setEntitySize(id, xs, ys, zs);
     }
-
-
-
 
     /**
-     * called when engine rebases its local coords
+     * Called when engine rebases its local coords.
      * @internal
+     * @param {number[]} delta
      */
     _rebaseOrigin(delta) {
-        for (var state of this.getStatesList(this.names.position)) {
-            var locPos = state._localPosition;
-            var hw = state.width / 2;
-            nudgePosition(locPos, 0, -hw, hw, state.__id);
-            nudgePosition(locPos, 1, 0, state.height, state.__id);
-            nudgePosition(locPos, 2, -hw, hw, state.__id);
-            glVec3.sub(locPos, locPos, delta);
-            this._updateDerivedPositionData(state.__id, state);
-        }
+        this._positions._rebaseOrigin(delta);
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @param {number} id
+     * @returns {number[]}
+     */
     _localGetPosition(id) {
-        return this.getPositionData(id)._localPosition
+        return this._positions._localGetPosition(id)
     }
 
-    /** @internal */
+    /**
+     * @internal
+     * @param {number} id
+     * @param {number[]} pos
+     */
     _localSetPosition(id, pos) {
-        var posDat = this.getPositionData(id);
-        glVec3.copy(posDat._localPosition, pos);
-        this._updateDerivedPositionData(id, posDat);
+        this._positions._localSetPosition(id, pos);
     }
 
-
-    /** 
-     * helper to update everything derived from `_localPosition`
-     * @internal 
-    */
+    /**
+     * Helper to update everything derived from `_localPosition`.
+     * @internal
+     * @param {number} id
+     * @param {import('../../components/position.js').PositionState} posDat
+     */
     _updateDerivedPositionData(id, posDat) {
-        glVec3.copy(posDat._renderPosition, posDat._localPosition);
-        var offset = this.noa.worldOriginOffset;
-        glVec3.add(posDat.position, posDat._localPosition, offset);
-        updatePositionExtents(posDat);
-        var physDat = this.getPhysics(id);
-        if (physDat) setPhysicsFromPosition(physDat, posDat);
+        this._positions._updateDerivedPositionData(id, posDat);
     }
 
 
+    // ============ SPATIAL QUERIES ============
 
-
-
-    /*
+    /**
+     * Checks whether a voxel is obstructed by any entity (with the
+     * `collidesTerrain` component).
      *
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {boolean}
+     */
+    isTerrainBlocked(x, y, z) {
+        return this._spatialQueries.isTerrainBlocked(x, y, z)
+    }
+
+    /**
+     * Gets an array of all entities overlapping the given AABB.
      *
-     *      OTHER ENTITY MANAGEMENT APIs
-     * 
-     *      note most APIs are on the original ECS module (ent-comp)
-     *      these are some overlaid extras for noa
-     *
-     *
-    */
+     * @param {{ base: number[], max: number[] }} box
+     * @param {string} [withComponent] - Optional component filter
+     * @returns {number[]}
+     */
+    getEntitiesInAABB(box, withComponent) {
+        return this._spatialQueries.getEntitiesInAABB(box, withComponent)
+    }
 
 
-    /** 
-     * Safely add a component - if the entity already had the 
+    // ============ ENTITY MANAGEMENT ============
+    // Note: most entity APIs are on the base ECS module (ent-comp).
+    // These are noa-specific extras.
+
+    /**
+     * Safely add a component - if the entity already had the
      * component, this will remove and re-add it.
-    */
+     *
+     * @param {number} id
+     * @param {string} name
+     * @param {object} [state]
+     */
     addComponentAgain(id, name, state) {
-        // removes component first if necessary
         if (this.hasComponent(id, name)) this.removeComponent(id, name);
         this.addComponent(id, name, state);
     }
 
 
-    /** 
-     * Checks whether a voxel is obstructed by any entity (with the 
-     * `collidesTerrain` component)
-    */
-    isTerrainBlocked(x, y, z) {
-        // checks if terrain location is blocked by entities
-        var off = this.noa.worldOriginOffset;
-        var xlocal = Math.floor(x - off[0]);
-        var ylocal = Math.floor(y - off[1]);
-        var zlocal = Math.floor(z - off[2]);
-        var blockExt = [
-            xlocal + 0.001, ylocal + 0.001, zlocal + 0.001,
-            xlocal + 0.999, ylocal + 0.999, zlocal + 0.999,
-        ];
-        var list = this.getStatesList(this.names.collideTerrain);
-        for (var i = 0; i < list.length; i++) {
-            var id = list[i].__id;
-            var ext = this.getPositionData(id)._extents;
-            if (extentsOverlap(blockExt, ext)) return true
-        }
-        return false
-    }
+    // ============ ENTITY FACTORY ============
 
-
-
-    /** 
-     * Gets an array of all entities overlapping the given AABB
-    */
-    getEntitiesInAABB(box, withComponent) {
-        // extents to test against
-        var off = this.noa.worldOriginOffset;
-        var testExtents = [
-            box.base[0] - off[0], box.base[1] - off[1], box.base[2] - off[2],
-            box.max[0] - off[0], box.max[1] - off[1], box.max[2] - off[2],
-        ];
-        // entity position state list
-        var entStates;
-        if (withComponent) {
-            entStates = [];
-            for (var compState of this.getStatesList(withComponent)) {
-                var pdat = this.getPositionData(compState.__id);
-                if (pdat) entStates.push(pdat);
-            }
-        } else {
-            entStates = this.getStatesList(this.names.position);
-        }
-
-        // run each test
-        var hits = [];
-        for (var i = 0; i < entStates.length; i++) {
-            var state = entStates[i];
-            if (extentsOverlap(testExtents, state._extents)) {
-                hits.push(state.__id);
-            }
-        }
-        return hits
-    }
-
-
-
-    /** 
-     * Helper to set up a general entity, and populate with some common components depending on arguments.
-    */
+    /**
+     * Helper to set up a general entity, and populate with some
+     * common components depending on arguments.
+     *
+     * @param {number[] | null} [position=null]
+     * @param {number} [width=1]
+     * @param {number} [height=1]
+     * @param {*} [mesh=null]
+     * @param {number[] | null} [meshOffset=null]
+     * @param {boolean} [doPhysics=false]
+     * @param {boolean} [shadow=false]
+     * @returns {number} Entity ID
+     */
     add(position = null, width = 1, height = 1,
         mesh = null, meshOffset = null, doPhysics = false, shadow = false) {
 
@@ -8219,7 +8729,6 @@ class Entities extends ECS {
 
         // rigid body in physics simulator
         if (doPhysics) {
-            // body = this.noa.physics.addBody(box)
             this.addComponent(eid, this.names.physics);
             var body = this.getPhysics(eid).body;
 
@@ -8248,27 +8757,14 @@ class Entities extends ECS {
     }
 
 
+    // ============ LIFECYCLE ============
+
     dispose() {
         if (this._disposed) return
         this._disposed = true;
 
-        // Clear global callback to prevent closure retention
-        this.onPairwiseEntityCollision = null;
-
-        // Clear accessor function references to release storage closures
-        this.cameraSmoothed = null;
-        this.hasPhysics = null;
-        this.hasPosition = null;
-        this.getPositionData = null;
-        this.getPosition = null;
-        this.getPhysics = null;
-        this.getPhysicsBody = null;
-        this.hasMesh = null;
-        this.getMeshData = null;
-        this.getMovement = null;
-        this.getCollideTerrain = null;
-        this.getCollideEntities = null;
-        this.getLabel = null;
+        // Clear accessor function references
+        clearAccessors(this);
 
         // Delete all entities (triggers onRemove handlers for cleanup)
         var ids = new Set();
@@ -8298,109 +8794,9 @@ class Entities extends ECS {
         this._renderSystems.length = 0;
         this.names = null;
         this.noa = null;
+        this._positions = null;
+        this._spatialQueries = null;
     }
-}
-
-
-/*
- *
- *
- *
- *          ENTITY QUERY IMPLEMENTATION
- *
- *
- *
-*/
-
-/**
- * Query object for iterating over entities with specific components.
- * Supports iterator protocol, forEach, and component chaining.
- */
-class EntityQueryImpl {
-    constructor(ecs, name) {
-        this._ecs = ecs;
-        this._names = [name];
-    }
-
-    *[Symbol.iterator]() {
-        const states = this._ecs.getStatesList(this._names[0]);
-        for (const state of states) {
-            if (!state) continue
-            const id = state.__id;
-            if (this._names.length === 1) {
-                yield { id, state };
-            } else {
-                let merged = { ...state };
-                let valid = true;
-                for (let i = 1; i < this._names.length; i++) {
-                    const other = this._ecs.getState(id, this._names[i]);
-                    if (!other) { valid = false; break }
-                    merged = { ...merged, ...other };
-                }
-                if (valid) yield { id, state: merged };
-            }
-        }
-    }
-
-    /**
-     * Chain another component requirement to the query.
-     * @param {string} name Component name
-     * @returns {EntityQueryImpl}
-     */
-    withComponent(name) {
-        const q = new EntityQueryImpl(this._ecs, this._names[0]);
-        q._names = [...this._names, name];
-        return q
-    }
-
-    /**
-     * Iterate with a callback function.
-     * @param {function({id:number, state:object}):void} cb
-     */
-    forEach(cb) { for (const r of this) cb(r); }
-
-    /**
-     * Get array of entity IDs matching the query.
-     * @returns {number[]}
-     */
-    getIds() { return Array.from(this).map(r => r.id) }
-
-    /**
-     * Count entities matching the query.
-     * @returns {number}
-     */
-    count() { let c = 0; for (const _ of this) c++; return c }
-}
-
-
-/*
- *
- *
- *
- *          HELPERS
- *
- *
- *
-*/
-
-// safety helper - when rebasing, nudge extent away from 
-// voxel boudaries, so floating point error doesn't carry us accross
-function nudgePosition(pos, index, dmin, dmax, id) {
-    var min = pos[index] + dmin;
-    var max = pos[index] + dmax;
-    if (Math.abs(min - Math.round(min)) < 0.002) pos[index] += 0.002;
-    if (Math.abs(max - Math.round(max)) < 0.001) pos[index] -= 0.001;
-}
-
-// compare extent arrays
-function extentsOverlap(extA, extB) {
-    if (extA[0] > extB[3]) return false
-    if (extA[1] > extB[4]) return false
-    if (extA[2] > extB[5]) return false
-    if (extA[3] < extB[0]) return false
-    if (extA[4] < extB[1]) return false
-    if (extA[5] < extB[2]) return false
-    return true
 }
 
 // helper to swap item to end and pop(), instead of splice()ing
