@@ -17,7 +17,7 @@ import {
     excludeMeshFromAllWorldLights,
     includeMeshInAllWorldLights
 } from './SceneLightIsolation.js'
-import { updateLightDirection, distanceSquared } from './DirectionController.js'
+import { updateLightDirection, distanceSquared, resetSmoothedDirection } from './DirectionController.js'
 import { log } from '../logging.js'
 
 
@@ -84,6 +84,9 @@ export class TextLighting {
 
         // Squared distances for faster comparisons
         this._lodDistanceSq = this._lodDistance * this._lodDistance
+
+        // Reset smoothed direction to avoid inheriting state across engine lifecycles
+        resetSmoothedDirection()
 
         // Initialize light when scene is ready
         this._initWhenReady()
@@ -487,6 +490,9 @@ export class TextLighting {
         disposeLights(this._textLight, this._textAmbient)
         this._textLight = null
         this._textAmbient = null
+
+        // Reset smoothed direction so future instances start from a known state
+        resetSmoothedDirection()
 
         // Unsubscribe observer
         unregisterSceneLightObserver(scene, this._sceneLightObserver)

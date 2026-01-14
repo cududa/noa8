@@ -194,6 +194,11 @@ export class Text {
      * @returns {Promise<object>} Font data object
      */
     async loadFont(fontFile) {
+        if (this._disposed || this.initFailed || !this.ready || !this._registerFont) {
+            warn('Cannot load font - text system not ready or disposed')
+            return null
+        }
+
         try {
             var fontModule = await import(`meshwriter-cudu/fonts/${fontFile}`)
             return fontModule.default
@@ -221,7 +226,13 @@ export class Text {
      * @param {string} fontFile - Built-in font filename (e.g., 'atkinson-hyperlegible-next')
      */
     async loadAndRegisterFont(name, fontFile) {
+        if (this._disposed || this.initFailed || !this.ready || !this._registerFont) {
+            warn('Cannot load/register font - text system not ready or disposed')
+            return
+        }
+
         var fontData = await this.loadFont(fontFile)
+        if (!fontData) return
         this.registerFont(name, fontData)
         log('Font registered:', name, 'from', fontFile)
     }

@@ -13323,11 +13323,6 @@ function callAllBlockHandlers(chunk, type) {
 
 var PROFILE_EVERY = 0;               // ticks
 
-
-
-
-
-
 var defaultOptions$1 = {
     chunkSize: 24,
     chunkAddDistance: [2, 2],           // [horizontal, vertical]
@@ -15669,6 +15664,18 @@ function updateLightDirection(light, camera, azimuth, elevation, smoothing) {
 }
 
 /**
+ * Reset the smoothed direction to a specific value.
+ * Useful when teleporting or resetting the camera.
+ * @param {Vector3} [direction] - Direction to reset to (defaults to down-forward)
+ */
+function resetSmoothedDirection(direction) {
+    {
+        _smoothedDir.copyFromFloats(0, -0.7, 0.7);
+    }
+    _smoothedDir.normalize();
+}
+
+/**
  * Calculate squared distance between camera position (array) and mesh position (Vector3).
  * @param {number[]} camPos - Camera position [x, y, z]
  * @param {object} meshPos - Mesh position (Vector3-like with x, y, z)
@@ -15773,6 +15780,9 @@ class TextLighting {
 
         // Squared distances for faster comparisons
         this._lodDistanceSq = this._lodDistance * this._lodDistance;
+
+        // Reset smoothed direction to avoid inheriting state across engine lifecycles
+        resetSmoothedDirection();
 
         // Initialize light when scene is ready
         this._initWhenReady();
@@ -16176,6 +16186,9 @@ class TextLighting {
         disposeLights(this._textLight, this._textAmbient);
         this._textLight = null;
         this._textAmbient = null;
+
+        // Reset smoothed direction so future instances start from a known state
+        resetSmoothedDirection();
 
         // Unsubscribe observer
         unregisterSceneLightObserver(scene, this._sceneLightObserver);
@@ -17030,6 +17043,11 @@ class Text {
      * @returns {Promise<object>} Font data object
      */
     async loadFont(fontFile) {
+        if (this._disposed || this.initFailed || !this.ready || !this._registerFont) {
+            warn('Cannot load font - text system not ready or disposed');
+            return null
+        }
+
         try {
             var fontModule = await import(`meshwriter-cudu/fonts/${fontFile}`);
             return fontModule.default
@@ -17057,7 +17075,13 @@ class Text {
      * @param {string} fontFile - Built-in font filename (e.g., 'atkinson-hyperlegible-next')
      */
     async loadAndRegisterFont(name, fontFile) {
+        if (this._disposed || this.initFailed || !this.ready || !this._registerFont) {
+            warn('Cannot load/register font - text system not ready or disposed');
+            return
+        }
+
         var fontData = await this.loadFont(fontFile);
+        if (!fontData) return
         this.registerFont(name, fontData);
         log('Font registered:', name, 'from', fontFile);
     }
