@@ -1,17 +1,12 @@
-
 import { Engine, Texture, MaterialPluginBase, RawTexture2DArray } from './babylonExports.js'
 
 /**
- * 
- * 
- *      This module creates and manages Materials for terrain meshes. 
- *      It tells the terrain mesher which block face materials can share
- *      the same material (and should thus be joined into a single mesh),
- *      and also creates the materials when needed.
- * 
+ * This module creates and manages Materials for terrain meshes.
+ * It tells the terrain mesher which block face materials can share
+ * the same material (and should thus be joined into a single mesh),
+ * and also creates the materials when needed.
  * @internal
-*/
-
+ */
 export class TerrainMatManager {
 
     /** @param {import('../index').Engine} noa  */
@@ -75,20 +70,14 @@ export class TerrainMatManager {
 }
 
 
-
-
-/**
- * 
- * 
+/*
  *      Implementations of creating/disambiguating terrain Materials
- * 
- * 
-*/
+ */
 
 /**
  * Decide a unique terrainID, based on block material ID properties
  * @param {TerrainMatManager} self
-*/
+ */
 function decideTerrainMatID(self, blockMatID = 0) {
     var matInfo = self.noa.registry.getMaterialData(blockMatID)
 
@@ -184,22 +173,10 @@ function createTerrainMat(self, blockMatID = 0) {
 }
 
 
-
-
-
-
-
-
-
-
-
 /**
- * 
- *      Babylon material plugin - twiddles the defines/shaders/etc so that
- *      a standard material can use textures from a 2D texture atlas.
- * 
-*/
-
+ * Babylon material plugin - twiddles the defines/shaders/etc so that
+ * a standard material can use textures from a 2D texture atlas.
+ */
 class TerrainMaterialPlugin extends MaterialPluginBase {
     constructor(material, texture) {
         var priority = 200
@@ -295,12 +272,9 @@ class TerrainMaterialPlugin extends MaterialPluginBase {
 
 
 /**
- *
- *      Flow Animation Plugin - adds vertex offset for conveyor belt effect
- *      Uses simple repeating pattern mode where offset wraps every patternLength blocks
- *
-*/
-
+ * Flow Animation Plugin - adds vertex offset for conveyor belt effect
+ * Uses simple repeating pattern mode where offset wraps every patternLength blocks
+ */
 class FlowAnimationPlugin extends MaterialPluginBase {
     constructor(material, flowSpeed, flowDirection, patternLength = 10) {
         var priority = 100

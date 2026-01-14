@@ -1,37 +1,26 @@
-
 import ndarray from 'ndarray'
 import { Mesh, VertexData } from './babylonExports.js'
 import { TerrainMatManager } from './terrainMaterials'
 import { makeProfileHook } from './util'
-
-
 
 // enable for profiling..
 var PROFILE_EVERY = 0
 var tempCoordArray = [0, 0, 0]
 
 
-
-
 /*
- * 
- *          TERRAIN MESHER!!
- * 
- * 
- *  top-level entry point:
- *      takes a chunk, passes it to the greedy mesher,
- *      gets back an intermediate struct of face data,
- *      passes that to the mesh builder,
- *      gets back an array of Mesh objects,
- *      and finally puts those into the 3D engine
- *      
-*/
+ *      TERRAIN MESHER
+ *
+ *  Top-level entry point: takes a chunk, passes it to the greedy mesher,
+ *  gets back an intermediate struct of face data, passes that to the mesh
+ *  builder, gets back an array of Mesh objects, and finally puts those
+ *  into the 3D engine.
+ */
 
-
-/** 
+/**
  * @internal
- * @param {import('../index').Engine} noa 
-*/
+ * @param {import('../index').Engine} noa
+ */
 export function TerrainMesher(noa) {
 
     // wrangles which block materials can be merged into the same mesh
@@ -561,10 +550,7 @@ function GreedyMesher(noa, terrainMatManager) {
 
 }
 
-
-/**
- * Extremely naive object pool for MeshedFaceData objects
-*/
+/** Extremely naive object pool for MeshedFaceData objects */
 var faceDataPool = (() => {
     var arr = [], ix = 0
     var get = () => {
@@ -966,12 +952,10 @@ function packAOMask(isSolid, ipos, ineg, j, k, skipReverse = false) {
 }
 
 /**
- * 
- *      Takes in a packed AO value representing a face,
- *      and returns four 2-bit numbers for the AO levels
- *      at the four corners.
- *      
-*/
+ * Takes in a packed AO value representing a face,
+ * and returns four 2-bit numbers for the AO levels
+ * at the four corners.
+ */
 function unpackAOMask(aomask) {
     var A = aomask & 3
     var B = (aomask >> 2) & 3
