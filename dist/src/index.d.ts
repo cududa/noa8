@@ -263,7 +263,7 @@ import { Container } from './lib/container';
 import { Inputs } from './lib/inputs';
 import { Registry } from './lib/registry';
 import { World } from './lib/world';
-import { Rendering } from './lib/rendering';
+import { Rendering } from './lib/rendering/index.js';
 import { Text } from './lib/text/index.js';
 import { Physics } from './lib/physics';
 import { Entities } from './lib/entities';
