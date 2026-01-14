@@ -6,11 +6,6 @@ import { LocationQueue, ChunkStorage, locationHasher } from './util'
 var PROFILE_EVERY = 0               // ticks
 var PROFILE_QUEUES_EVERY = 0        // ticks
 
-
-
-
-
-
 var defaultOptions = {
     chunkSize: 24,
     chunkAddDistance: [2, 2],           // [horizontal, vertical]
