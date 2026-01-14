@@ -183,7 +183,7 @@ export class Engine extends EventEmitter {
     /**
      * Get the voxel ID at the specified position
     */
-    getBlock(x: any, y?: number, z?: number): any;
+    getBlock(x: any, y?: number, z?: number): number;
     /**
      * Sets the voxel ID at the specified position.
      * Does not check whether any entities are in the way!
@@ -262,7 +262,7 @@ import { EventEmitter } from 'events';
 import { Container } from './lib/container';
 import { Inputs } from './lib/inputs';
 import { Registry } from './lib/registry';
-import { World } from './lib/world';
+import { World } from './lib/world/index.js';
 import { Rendering } from './lib/rendering/index.js';
 import { Text } from './lib/text/index.js';
 import { Physics } from './lib/physics';
