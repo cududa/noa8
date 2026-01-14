@@ -268,7 +268,7 @@ import { Text } from './lib/text/index.js';
 import { Physics } from './lib/physics';
 import { Entities } from './lib/entities';
 import { Camera } from './lib/camera';
-import { TerrainMesher } from './lib/terrainMesher';
+import { TerrainMesher } from './lib/terrain/index.js';
 import { ObjectMesher } from './lib/objectMesher';
 import * as vec3 from 'gl-vec3';
 import * as skeletonUtils from './lib/skeletonUtils';

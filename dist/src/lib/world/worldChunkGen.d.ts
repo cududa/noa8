@@ -7,7 +7,13 @@
  */
 /**
  * Async chunk generator function signature
- * @typedef {function(number, number, number, number, AbortSignal): Promise<ChunkGeneratorResult|null>} ChunkGeneratorFunction
+ * @callback ChunkGeneratorFunction
+ * @param {number} x - Chunk world x coordinate
+ * @param {number} y - Chunk world y coordinate
+ * @param {number} z - Chunk world z coordinate
+ * @param {number} requestID - Unique request identifier
+ * @param {AbortSignal} signal - Abort signal for cancellation
+ * @returns {Promise<ChunkGeneratorResult|null>} Generated chunk data or null
  */
 /**
  * Handles async chunk generator registration and execution.
@@ -100,4 +106,4 @@ export type ChunkGeneratorResult = {
 /**
  * Async chunk generator function signature
  */
-export type ChunkGeneratorFunction = (arg0: number, arg1: number, arg2: number, arg3: number, arg4: AbortSignal) => Promise<ChunkGeneratorResult | null>;
+export type ChunkGeneratorFunction = (x: number, y: number, z: number, requestID: number, signal: AbortSignal) => Promise<ChunkGeneratorResult | null>;

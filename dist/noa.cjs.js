@@ -2,9 +2,9 @@
 
 var discBuilder = require('@babylonjs/core/Meshes/Builders/discBuilder');
 var transformNode = require('@babylonjs/core/Meshes/transformNode');
-var texture = require('@babylonjs/core/Materials/Textures/texture');
 var materialPluginBase = require('@babylonjs/core/Materials/materialPluginBase');
 var engine = require('@babylonjs/core/Engines/engine');
+var texture = require('@babylonjs/core/Materials/Textures/texture');
 var rawTexture2DArray = require('@babylonjs/core/Materials/Textures/rawTexture2DArray');
 var mesh = require('@babylonjs/core/Meshes/mesh');
 var mesh_vertexData = require('@babylonjs/core/Meshes/mesh.vertexData');
@@ -8889,211 +8889,28 @@ function copyMatrixData(src, srcOff, dest, destOff) {
 }
 
 /**
- * 
- * 
- *      This module creates and manages Materials for terrain meshes. 
- *      It tells the terrain mesher which block face materials can share
- *      the same material (and should thus be joined into a single mesh),
- *      and also creates the materials when needed.
- * 
- * @internal
-*/
-
-class TerrainMatManager {
-
-    /** @param {import('../index').Engine} noa  */
-    constructor(noa) {
-        // make a baseline default material for untextured terrain with no alpha
-        this._defaultMat = noa.rendering.makeStandardMaterial('base-terrain');
-        this._defaultMat.freeze();
-
-        this.allMaterials = [this._defaultMat];
-
-        // internals
-        this.noa = noa;
-        this._idCounter = 1000;
-        this._blockMatIDtoTerrainID = {};
-        this._terrainIDtoMatObject = {};
-        this._texURLtoTerrainID = {};
-        this._renderMatToTerrainID = new Map();
-    }
-
-
-
-    /** 
-     * Maps a given `matID` (from noa.registry) to a unique ID of which 
-     * terrain material can be used for that block material.
-     * This lets the terrain mesher map which blocks can be merged into
-     * the same meshes.
-     * Internally, this accessor also creates the material for each 
-     * terrainMatID as they are first encountered.
-     */
-
-    getTerrainMatId(blockMatID) {
-        // fast case where matID has been seen before
-        if (blockMatID in this._blockMatIDtoTerrainID) {
-            return this._blockMatIDtoTerrainID[blockMatID]
-        }
-        // decide a unique terrainID for this block material
-        var terrID = decideTerrainMatID(this, blockMatID);
-        // create a mat object for it, if needed
-        if (!(terrID in this._terrainIDtoMatObject)) {
-            var mat = createTerrainMat(this, blockMatID);
-            this.allMaterials.push(mat);
-            this._terrainIDtoMatObject[terrID] = mat;
-        }
-        // cache results and done
-        this._blockMatIDtoTerrainID[blockMatID] = terrID;
-        return terrID
-    }
-
-
-    /**
-     * Get a Babylon Material object, given a terrainMatID (gotten from this module)
-     */
-    getMaterial(terrainMatID = 1) {
-        return this._terrainIDtoMatObject[terrainMatID]
-    }
-
-
-
-
-
-}
-
-
-
+ * Babylon.js material plugins for terrain rendering.
+ * @module terrain/terrainPlugins
+ */
 
 /**
- * 
- * 
- *      Implementations of creating/disambiguating terrain Materials
- * 
- * 
-*/
-
-/**
- * Decide a unique terrainID, based on block material ID properties
- * @param {TerrainMatManager} self
-*/
-function decideTerrainMatID(self, blockMatID = 0) {
-    var matInfo = self.noa.registry.getMaterialData(blockMatID);
-
-    // custom render materials get one unique terrainID per material
-    if (matInfo.renderMat) {
-        var mat = matInfo.renderMat;
-        if (!self._renderMatToTerrainID.has(mat)) {
-            self._renderMatToTerrainID.set(mat, self._idCounter++);
-        }
-        return self._renderMatToTerrainID.get(mat)
-    }
-
-    // animated materials get unique terrain IDs since they need their own material instance
-    if (matInfo.flowSpeed > 0) {
-        return self._idCounter++
-    }
-
-    // ditto for textures, unique URL
-    if (matInfo.texture) {
-        var url = matInfo.texture;
-        if (!(url in self._texURLtoTerrainID)) {
-            self._texURLtoTerrainID[url] = self._idCounter++;
-        }
-        return self._texURLtoTerrainID[url]
-    }
-
-    // plain color materials with an alpha value are unique by alpha
-    var alpha = matInfo.alpha;
-    if (alpha > 0 && alpha < 1) return 10 + Math.round(alpha * 100)
-
-    // the only remaining case is the baseline, which always reuses one fixed ID
-    return 1
-}
-
-
-/**
- * Create (choose) a material for a given set of block material properties
- * @param {TerrainMatManager} self
-*/
-function createTerrainMat(self, blockMatID = 0) {
-    var matInfo = self.noa.registry.getMaterialData(blockMatID);
-
-    // custom render mats are just reused
-    if (matInfo.renderMat) return matInfo.renderMat
-
-    var isAnimated = (matInfo.flowSpeed > 0);
-
-    // if no texture: use a basic flat material, possibly with alpha or animation
-    if (!matInfo.texture) {
-        var needsAlpha = (matInfo.alpha > 0 && matInfo.alpha < 1);
-        if (!needsAlpha && !isAnimated) return self._defaultMat
-        var matName = 'terrain-' + (isAnimated ? 'animated-' : 'alpha-') + blockMatID;
-        var plainMat = self.noa.rendering.makeStandardMaterial(matName);
-        plainMat.alpha = matInfo.alpha;
-
-        // add flow animation plugin if needed
-        if (isAnimated) {
-            new FlowAnimationPlugin(plainMat, matInfo.flowSpeed, matInfo.flowDirection, matInfo.flowPatternLength);
-            // animated materials can't be frozen since uniforms update each frame
-        } else {
-            plainMat.freeze();
-        }
-        return plainMat
-    }
-
-    // remaining case is a new material with a diffuse texture
-    var scene = self.noa.rendering.getScene();
-    var mat = self.noa.rendering.makeStandardMaterial('terrain-textured-' + blockMatID);
-    var texURL = matInfo.texture;
-    var sampling = texture.Texture.NEAREST_SAMPLINGMODE;
-    var tex = new texture.Texture(texURL, scene, true, false, sampling);
-    if (matInfo.texHasAlpha) tex.hasAlpha = true;
-    mat.diffuseTexture = tex;
-
-    // it texture is an atlas, apply material plugin
-    // and check whether any material for the atlas needs alpha
-    if (matInfo.atlasIndex >= 0) {
-        new TerrainMaterialPlugin(mat, tex);
-        if (self.noa.registry._textureNeedsAlpha(matInfo.texture)) {
-            tex.hasAlpha = true;
-        }
-    }
-
-    // add flow animation plugin if needed
-    if (isAnimated) {
-        new FlowAnimationPlugin(mat, matInfo.flowSpeed, matInfo.flowDirection, matInfo.flowPatternLength);
-        // animated materials can't be frozen since uniforms update each frame
-    } else {
-        mat.freeze();
-    }
-
-    return mat
-}
-
-
-
-
-
-
-
-
-
-
-
-/**
- * 
- *      Babylon material plugin - twiddles the defines/shaders/etc so that
- *      a standard material can use textures from a 2D texture atlas.
- * 
-*/
-
+ * Babylon material plugin - twiddles the defines/shaders/etc so that
+ * a standard material can use textures from a 2D texture atlas.
+ */
 class TerrainMaterialPlugin extends materialPluginBase.MaterialPluginBase {
+    /**
+     * @param {import('@babylonjs/core').Material} material
+     * @param {import('@babylonjs/core').Texture} texture
+     */
     constructor(material, texture) {
         var priority = 200;
         var defines = { 'NOA_TWOD_ARRAY_TEXTURE': false };
         super(material, 'TestPlugin', priority, defines);
         this._enable(true);
+
+        /** @type {import('@babylonjs/core').RawTexture2DArray | null} */
         this._atlasTextureArray = null;
+        /** @type {import('@babylonjs/core').Observer<import('@babylonjs/core').Texture> | null} */
         this._textureLoadObserver = null;
 
         this._textureLoadObserver = texture.onLoadObservable.add((tex) => {
@@ -9113,6 +8930,9 @@ class TerrainMaterialPlugin extends materialPluginBase.MaterialPluginBase {
         });
     }
 
+    /**
+     * @param {import('@babylonjs/core').Texture} texture
+     */
     setTextureArrayData(texture$1) {
         var { width, height } = texture$1.getSize();
         var numLayers = Math.round(height / width);
@@ -9169,7 +8989,7 @@ class TerrainMaterialPlugin extends materialPluginBase.MaterialPluginBase {
             `,
         }
         if (shaderType === 'fragment') return {
-            '!baseColor\\=texture2D\\(diffuseSampler,vDiffuseUV\\+uvOffset\\);':
+            '!baseColor\\\\=texture2D\\\\(diffuseSampler,vDiffuseUV\\\\+uvOffset\\\\);':
                 `baseColor = texture(atlasTexture, vec3(vDiffuseUV, texAtlasIndex));`,
             'CUSTOM_FRAGMENT_DEFINITIONS': `
                 uniform highp sampler2DArray atlasTexture;
@@ -9182,23 +9002,31 @@ class TerrainMaterialPlugin extends materialPluginBase.MaterialPluginBase {
 
 
 /**
- *
- *      Flow Animation Plugin - adds vertex offset for conveyor belt effect
- *      Uses simple repeating pattern mode where offset wraps every patternLength blocks
- *
-*/
-
+ * Flow Animation Plugin - adds vertex offset for conveyor belt effect.
+ * Uses simple repeating pattern mode where offset wraps every patternLength blocks.
+ */
 class FlowAnimationPlugin extends materialPluginBase.MaterialPluginBase {
+    /**
+     * @param {import('@babylonjs/core').Material} material
+     * @param {number} flowSpeed
+     * @param {number[]} flowDirection
+     * @param {number} [patternLength=10]
+     */
     constructor(material, flowSpeed, flowDirection, patternLength = 10) {
         var priority = 100;
         var defines = { 'NOA_FLOW_ANIMATION': false };
         super(material, 'FlowAnimationPlugin', priority, defines);
         this._enable(true);
 
+        /** @type {number} */
         this._flowSpeed = flowSpeed;
+        /** @type {number[]} */
         this._flowDirection = flowDirection.slice(); // copy array
+        /** @type {number} */
         this._patternLength = patternLength;
+        /** @type {number} */
         this._time = 0;
+        /** @type {import('@babylonjs/core').Observer<import('@babylonjs/core').Scene> | null} */
         this._renderObserver = null;
 
         // hook into scene render loop to update time
@@ -9267,558 +9095,233 @@ class FlowAnimationPlugin extends materialPluginBase.MaterialPluginBase {
     }
 }
 
-var tempCoordArray = [0, 0, 0];
+/**
+ * Material management for terrain meshes.
+ * @module terrain/terrainMaterials
+ */
 
-
-
-
-/*
- * 
- *          TERRAIN MESHER!!
- * 
- * 
- *  top-level entry point:
- *      takes a chunk, passes it to the greedy mesher,
- *      gets back an intermediate struct of face data,
- *      passes that to the mesh builder,
- *      gets back an array of Mesh objects,
- *      and finally puts those into the 3D engine
- *      
-*/
-
-
-/** 
+/**
+ * Creates and manages Materials for terrain meshes.
+ * Maps block face materials to terrain material IDs for mesh merging,
+ * and creates the materials when needed.
  * @internal
- * @param {import('../index').Engine} noa 
-*/
-function TerrainMesher(noa) {
+ */
+class TerrainMatManager {
+    /**
+     * @param {import('./index.js').TerrainMesher} parent
+     */
+    constructor(parent) {
+        /** @type {import('./index.js').TerrainMesher} */
+        this.parent = parent;
 
-    // wrangles which block materials can be merged into the same mesh
-    var terrainMatManager = new TerrainMatManager(noa);
-    this.allTerrainMaterials = terrainMatManager.allMaterials;
+        // make a baseline default material for untextured terrain with no alpha
+        this._defaultMat = parent.noa.rendering.makeStandardMaterial('base-terrain');
+        this._defaultMat.freeze();
 
-    // internally expose the default flat material used for untextured terrain
-    this._defaultMaterial = terrainMatManager._defaultMat;
+        /** @type {import('@babylonjs/core').Material[]} */
+        this.allMaterials = [this._defaultMat];
 
-    // two-pass implementations for this module
-    var greedyMesher = new GreedyMesher(noa, terrainMatManager);
-    var meshBuilder = new MeshBuilder(noa, terrainMatManager);
-
-
-    /*
-     * 
-     *      API
-     * 
-    */
-
-    // set or clean up any per-chunk properties needed for terrain meshing
-    this.initChunk = function (chunk) {
-        chunk._terrainMeshes.length = 0;
-    };
-
-    this.disposeChunk = function (chunk) {
-        chunk._terrainMeshes.forEach(mesh => {
-            noa.emit('removingTerrainMesh', mesh);
-            mesh.dispose();
-        });
-        chunk._terrainMeshes.length = 0;
-    };
-
+        // internals
+        /** @internal @type {number} */
+        this._idCounter = 1000;
+        /** @internal @type {Object.<number, number>} */
+        this._blockMatIDtoTerrainID = {};
+        /** @internal @type {Object.<number, import('@babylonjs/core').Material>} */
+        this._terrainIDtoMatObject = {};
+        /** @internal @type {Object.<string, number>} */
+        this._texURLtoTerrainID = {};
+        /** @internal @type {Map<import('@babylonjs/core').Material, number>} */
+        this._renderMatToTerrainID = new Map();
+    }
 
     /**
-     * meshing entry point and high-level flow
-     * @param {import('./chunk').Chunk} chunk 
+     * Maps a given `matID` (from noa.registry) to a unique ID of which
+     * terrain material can be used for that block material.
+     * This lets the terrain mesher map which blocks can be merged into
+     * the same meshes.
+     * Internally, this accessor also creates the material for each
+     * terrainMatID as they are first encountered.
+     * @param {number} blockMatID
+     * @returns {number}
      */
-    this.meshChunk = function (chunk, ignoreMaterials = false) {
-
-        // remove any previous terrain meshes
-        this.disposeChunk(chunk);
-
-        // greedy mesher generates struct of face data
-        var faceDataSet = greedyMesher.mesh(chunk, ignoreMaterials);
-
-        // builder generates mesh data (positions, normals, etc)
-        var meshes = meshBuilder.buildMesh(chunk, faceDataSet, ignoreMaterials);
-
-        // add meshes to scene and finish
-        meshes.forEach((mesh$1) => {
-            mesh$1.cullingStrategy = mesh.Mesh.CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY;
-            noa.rendering.addMeshToScene(mesh$1, true, chunk.pos, chunk);
-            noa.emit('addingTerrainMesh', mesh$1);
-            mesh$1.freezeNormals();
-            mesh$1.freezeWorldMatrix();
-            chunk._terrainMeshes.push(mesh$1);
-            if (!mesh$1.metadata) mesh$1.metadata = {};
-            mesh$1.metadata[terrainMeshFlag] = true;
-        });
-    };
-    var terrainMeshFlag = 'noa_chunk_terrain_mesh';
-
-}
-
-
-
-
-
-
-
-/*
- * 
- * 
- * 
- * 
- *      Intermediate struct to hold data for a bunch of merged block faces
- * 
- *      The greedy mesher produces these (one per terrainID), 
- *      and the mesh builder turns each one into a Mesh instance.
- *
- * 
- * 
- * 
- * 
-*/
-
-function MeshedFaceData() {
-    this.terrainID = 0;
-    this.numFaces = 0;
-    // following arrays are all one element per quad
-    this.matIDs = [];
-    this.dirs = [];
-    this.is = [];
-    this.js = [];
-    this.ks = [];
-    this.wids = [];
-    this.hts = [];
-    this.packedAO = [];
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * 
- * 
- * 
- *      Greedy meshing algorithm
- *      
- *      Originally based on algo by Mikola Lysenko:
- *          http://0fps.net/2012/07/07/meshing-minecraft-part-2/
- *      but probably no code remaining from there anymore.
- *      Ad-hoc AO handling by me, made of cobwebs and dreams
- * 
- *    
- *      Takes in a Chunk instance, and returns an object containing 
- *      GeometryData structs, keyed by terrain material ID, 
- *      which the terrain builder can then make into meshes.
- * 
- * 
- * @param {import('../index').Engine} noa
- * @param {import('./terrainMaterials').TerrainMatManager} terrainMatManager
-*/
-
-function GreedyMesher(noa, terrainMatManager) {
-
-    // class-wide cached structs and getters
-    var maskCache = new Int16Array(16);
-    var aoMaskCache = new Int16Array(16);
-
-    // terrain ID accessor can be overridded for hacky reasons
-    var realGetTerrainID = terrainMatManager.getTerrainMatId.bind(terrainMatManager);
-    var fakeGetTerrainID = (matID) => 1;
-    var terrainIDgetter = realGetTerrainID;
-
-
-
-
-
-    /** 
-     * Entry point
-     * 
-     * @param {import('./chunk').Chunk} chunk
-     * @returns {Object.<string, MeshedFaceData>} keyed by terrain material ID 
-     */
-    this.mesh = function (chunk, ignoreMaterials) {
-        var cs = chunk.size;
-        terrainIDgetter = (ignoreMaterials) ? fakeGetTerrainID : realGetTerrainID;
-
-        // no internal faces for empty or entirely solid chunks
-        var edgesOnly = (chunk._isEmpty || chunk._isFull);
-
-        /** @type {Object.<string, MeshedFaceData>} */
-        var faceDataSet = {};
-        faceDataPool.reset();
-
-        // Sweep over each axis, mapping axes to [d,u,v]
-        for (var d = 0; d < 3; ++d) {
-            var u = (d === 2) ? 0 : 2;
-            var v = (d === 1) ? 0 : 1;
-
-            // transposed ndarrays of nearby chunk voxels (self and neighbors)
-            var nabVoxelsArr = chunk._neighbors.data.map(c => {
-                if (c && c.voxels) return c.voxels.transpose(d, u, v)
-                return null
-            });
-
-            // ndarray of the previous, similarly transposed
-            var nabVoxelsT = ndarray(nabVoxelsArr, [3, 3, 3])
-                .lo(1, 1, 1)
-                .transpose(d, u, v);
-
-            // embiggen the cached mask arrays if needed - grow exponentially to reduce allocations
-            if (maskCache.length < cs * cs) {
-                var newSize = Math.max(cs * cs, maskCache.length * 2);
-                maskCache = new Int16Array(newSize);
-                aoMaskCache = new Int16Array(newSize);
-            }
-
-            // sets up transposed accessor for querying solidity of (i,j,k):
-            prepareSolidityLookup(nabVoxelsT, cs);
-
-
-            // ACTUAL MASK AND GEOMETRY CREATION
-
-
-            // mesh plane between this chunk and previous neighbor on i axis?
-            var prev = nabVoxelsT.get(-1, 0, 0);
-            var here = nabVoxelsT.get(0, 0, 0);
-            if (prev) {
-                // offset version of neighbor to make queries work at i=-1
-                var prevOff = prev.lo(cs, 0, 0);
-                var nFaces = constructMeshMask(d, prevOff, -1, here, 0);
-
-                if (nFaces > 0) {
-                    constructGeometryFromMasks(0, d, u, v, cs, cs, nFaces, faceDataSet);
-                }
-            }
-
-            // if only doing edges, we're done with this axis
-            if (edgesOnly) continue
-
-
-            // mesh the rest of the planes internal to this chunk
-            // note only looping up to (size-1), skipping final coord so as 
-            // not to duplicate faces at chunk borders
-            for (var i = 0; i < cs - 1; i++) {
-
-                // maybe skip y axis, if both layers are all the same voxel
-                if (d === 1) {
-                    var v1 = chunk._wholeLayerVoxel[i];
-                    if (v1 >= 0 && v1 === chunk._wholeLayerVoxel[i + 1]) {
-                        continue
-                    }
-                }
-
-                // pass in layer array for skip checks, only if not already checked
-                var layerVoxRef = (d === 1) ? null : chunk._wholeLayerVoxel;
-
-                var nf = constructMeshMask(d, here, i, here, i + 1, layerVoxRef);
-                if (nf > 0) {
-                    constructGeometryFromMasks(i + 1, d, u, v, cs, cs, nf, faceDataSet);
-                }
-            }
-
-            // we skip the i-positive neighbor so as not to duplicate edge faces
+    getTerrainMatId(blockMatID) {
+        // fast case where matID has been seen before
+        if (blockMatID in this._blockMatIDtoTerrainID) {
+            return this._blockMatIDtoTerrainID[blockMatID]
         }
-
-        // done!
-        return faceDataSet
-    };
-
-
-
-
-
+        // decide a unique terrainID for this block material
+        var terrID = decideTerrainMatID(this, blockMatID);
+        // create a mat object for it, if needed
+        if (!(terrID in this._terrainIDtoMatObject)) {
+            var mat = createTerrainMat(this, blockMatID);
+            this.allMaterials.push(mat);
+            this._terrainIDtoMatObject[terrID] = mat;
+        }
+        // cache results and done
+        this._blockMatIDtoTerrainID[blockMatID] = terrID;
+        return terrID
+    }
 
     /**
-     * Rigging for a transposed (i,j,k) => boolean solidity lookup, 
-     * that knows how to query into neigboring chunks at edges.
-     * This sets up the indirection used by `voxelIsSolid` below.
-    */
-    function prepareSolidityLookup(nabVoxelsT, size) {
-        if (solidityLookupInittedSize !== size) {
-            solidityLookupInittedSize = size;
-            voxelIDtoSolidity = noa.registry._solidityLookup;
-
-            for (var x = -1; x < size + 1; x++) {
-                var loc = (x < 0) ? 0 : (x < size) ? 1 : 2;
-                coordToLoc[x + 1] = [0, 1, 2][loc];
-                edgeCoordLookup[x + 1] = [size - 1, x, 0][loc];
-                missingCoordLookup[x + 1] = [0, x, size - 1][loc];
-            }
-        }
-
-        var centerChunk = nabVoxelsT.get(0, 0, 0);
-        for (var i = 0; i < 3; i++) {
-            for (var j = 0; j < 3; j++) {
-                for (var k = 0; k < 3; k++) {
-                    var ix = i * 9 + j * 3 + k;
-                    var nab = nabVoxelsT.get(i - 1, j - 1, k - 1);
-                    var type = 0;
-                    if (!nab) type = 1;
-                    if (nab === centerChunk) type = 2;
-                    voxTypeLookup[ix] = type;
-                    voxLookup[ix] = nab || centerChunk;
-                }
-            }
-        }
-    }
-
-    var solidityLookupInittedSize = -1;
-    var voxelIDtoSolidity = [false, true];
-    var voxLookup = Array(27).fill(null);
-    var voxTypeLookup = Array(27).fill(0);
-    var coordToLoc = [0, 1, 1, 1, 1, 1, 2];
-    var edgeCoordLookup = [3, 0, 1, 2, 3, 0];
-    var missingCoordLookup = [0, 0, 1, 2, 3, 3];
-
-
-    function voxelIsSolid(i, j, k) {
-        var li = coordToLoc[i + 1];
-        var lj = coordToLoc[j + 1];
-        var lk = coordToLoc[k + 1];
-        var ix = li * 9 + lj * 3 + lk;
-        var voxArray = voxLookup[ix];
-        var type = voxTypeLookup[ix];
-        if (type === 2) {
-            return voxelIDtoSolidity[voxArray.get(i, j, k)]
-        }
-        var lookup = [edgeCoordLookup, missingCoordLookup][type];
-        var ci = lookup[i + 1];
-        var cj = lookup[j + 1];
-        var ck = lookup[k + 1];
-        return voxelIDtoSolidity[voxArray.get(ci, cj, ck)]
-    }
-
-
-
-
-
-
-
-
-    /**
-     * 
-     *      Build a 2D array of mask values representing whether a 
-     *      mesh face is needed at each position
-     * 
-     *      Each mask value is a terrain material ID, negative if
-     *      the face needs to point in the -i direction (towards voxel arr A)
-     * 
-     * @returns {number} number of mesh faces found
+     * Get a Babylon Material object, given a terrainMatID (gotten from this module)
+     * @param {number} [terrainMatID=1]
+     * @returns {import('@babylonjs/core').Material}
      */
-
-    function constructMeshMask(d, arrA, iA, arrB, iB, wholeLayerVoxel = null) {
-        var len = arrA.shape[1];
-        var mask = maskCache;
-        var aoMask = aoMaskCache;
-        var doAO = noa.rendering.useAO;
-        var skipRevAo = (noa.rendering.revAoVal === noa.rendering.aoVals[0]);
-
-        var opacityLookup = noa.registry._opacityLookup;
-        var getMaterial = noa.registry.getBlockFaceMaterial;
-        var materialDir = d * 2;
-
-        // mask is iterated by a simple integer, both here and later when
-        // merging meshes, so the j/k order must be the same in both places
-        var n = 0;
-
-        // set up for quick ndarray traversals
-        var indexA = arrA.index(iA, 0, 0);
-        var jstrideA = arrA.stride[1];
-        var kstrideA = arrA.stride[2];
-        var indexB = arrB.index(iB, 0, 0);
-        var jstrideB = arrB.stride[1];
-        var kstrideB = arrB.stride[2];
-
-        var facesFound = 0;
-
-        for (var k = 0; k < len; ++k) {
-            var dA = indexA;
-            var dB = indexB;
-            indexA += kstrideA;
-            indexB += kstrideB;
-
-            // skip this second axis, if whole layer is same voxel?
-            if (wholeLayerVoxel && wholeLayerVoxel[k] >= 0) {
-                n += len;
-                continue
-            }
-
-            for (var j = 0; j < len; j++, n++, dA += jstrideA, dB += jstrideB) {
-
-                // mask[n] represents the face needed between the two voxel layers
-                // for now, assume we never have two faces in both directions
-
-                // note that mesher zeroes out the mask as it goes, so there's 
-                // no need to zero it here when no face is needed
-
-                // IDs at i-1,j,k  and  i,j,k
-                var id0 = arrA.data[dA];
-                var id1 = arrB.data[dB];
-
-                // most common case: never a face between same voxel IDs, 
-                // so skip out early
-                if (id0 === id1) continue
-
-                // no face if both blocks are opaque
-                var op0 = opacityLookup[id0];
-                var op1 = opacityLookup[id1];
-                if (op0 && op1) continue
-
-                // also no face if both block faces have the same block material
-                var m0 = getMaterial(id0, materialDir) || 0;
-                var m1 = getMaterial(id1, materialDir + 1) || 0;
-                if (m0 === m1) continue
-
-                // choose which block face to draw:
-                //   * if either block is opaque draw that one
-                //   * if either material is missing draw the other one
-                if (op0 || m1 === 0) {
-                    mask[n] = m0;
-                    if (doAO) aoMask[n] = packAOMask(voxelIsSolid, iB, iA, j, k, skipRevAo);
-                    facesFound++;
-                } else if (op1 || m0 === 0) {
-                    mask[n] = -m1;
-                    if (doAO) aoMask[n] = packAOMask(voxelIsSolid, iA, iB, j, k, skipRevAo);
-                    facesFound++;
-                } else ;
-            }
-        }
-        return facesFound
+    getMaterial(terrainMatID = 1) {
+        return this._terrainIDtoMatObject[terrainMatID]
     }
-
-
-
-
-
-
-    // 
-    //      Greedy meshing inner loop two
-    //
-    // construct geometry data from the masks
-
-    function constructGeometryFromMasks(i, d, u, v, len1, len2, numFaces, faceDataSet) {
-        var doAO = noa.rendering.useAO;
-        var mask = maskCache;
-        var aomask = aoMaskCache;
-
-        var n = 0;
-        var materialDir = d * 2;
-        // reuse array to avoid allocation in hot path
-        var coords = tempCoordArray;
-        coords[0] = 0;
-        coords[1] = 0;
-        coords[2] = 0;
-        coords[d] = i;
-
-        var maskCompareFcn = (doAO) ? maskCompare : maskCompare_noAO;
-
-        for (var k = 0; k < len2; ++k) {
-            var w = 1;
-            var h = 1;
-            for (var j = 0; j < len1; j += w, n += w) {
-
-                var maskVal = mask[n] | 0;
-                if (!maskVal) {
-                    w = 1;
-                    continue
-                }
-
-                var ao = aomask[n] | 0;
-
-                // Compute width and height of area with same mask/aomask values
-                for (w = 1; w < len1 - j; ++w) {
-                    if (!maskCompareFcn(n + w, mask, maskVal, aomask, ao)) break
-                }
-
-                OUTER:
-                for (h = 1; h < len2 - k; ++h) {
-                    for (var m = 0; m < w; ++m) {
-                        var ix = n + m + h * len1;
-                        if (!maskCompareFcn(ix, mask, maskVal, aomask, ao)) break OUTER
-                    }
-                }
-
-                // for testing: doing the following will disable greediness
-                //w=h=1
-
-                //  materialID and terrain ID type for the face
-                var matID = Math.abs(maskVal);
-                var terrainID = terrainIDgetter(matID);
-
-                // if terrainID not seen before, start a new MeshedFaceData
-                // from the extremely naive object pool
-                if (!(terrainID in faceDataSet)) {
-                    var fdFromPool = faceDataPool.get();
-                    fdFromPool.numFaces = 0;
-                    fdFromPool.terrainID = terrainID;
-                    faceDataSet[terrainID] = fdFromPool;
-                }
-
-                // pack one face worth of data into the return struct
-
-                var faceData = faceDataSet[terrainID];
-                var nf = faceData.numFaces;
-                faceData.numFaces++;
-
-                faceData.matIDs[nf] = matID;
-                coords[u] = j;
-                coords[v] = k;
-                faceData.is[nf] = coords[0];
-                faceData.js[nf] = coords[1];
-                faceData.ks[nf] = coords[2];
-                faceData.wids[nf] = w;
-                faceData.hts[nf] = h;
-                faceData.packedAO[nf] = ao;
-                faceData.dirs[nf] = (maskVal > 0) ? materialDir : materialDir + 1;
-
-
-                // Face now finished, zero out the used part of the mask
-                for (var hx = 0; hx < h; ++hx) {
-                    for (var wx = 0; wx < w; ++wx) {
-                        mask[n + wx + hx * len1] = 0;
-                    }
-                }
-
-                // exit condition where no more faces are left to mesh
-                numFaces -= w * h;
-                if (numFaces === 0) return
-            }
-        }
-    }
-
-    function maskCompare(index, mask, maskVal, aomask, aoVal) {
-        if (maskVal !== mask[index]) return false
-        if (aoVal !== aomask[index]) return false
-        return true
-    }
-
-    function maskCompare_noAO(index, mask, maskVal, aomask, aoVal) {
-        if (maskVal !== mask[index]) return false
-        return true
-    }
-
 }
 
 
 /**
- * Extremely naive object pool for MeshedFaceData objects
-*/
+ * Decide a unique terrainID, based on block material ID properties
+ * @param {TerrainMatManager} self
+ * @param {number} [blockMatID=0]
+ * @returns {number}
+ */
+function decideTerrainMatID(self, blockMatID = 0) {
+    var matInfo = self.parent.noa.registry.getMaterialData(blockMatID);
+
+    // custom render materials get one unique terrainID per material
+    if (matInfo.renderMat) {
+        var mat = matInfo.renderMat;
+        if (!self._renderMatToTerrainID.has(mat)) {
+            self._renderMatToTerrainID.set(mat, self._idCounter++);
+        }
+        return self._renderMatToTerrainID.get(mat)
+    }
+
+    // animated materials get unique terrain IDs since they need their own material instance
+    if (matInfo.flowSpeed > 0) {
+        return self._idCounter++
+    }
+
+    // ditto for textures, unique URL
+    if (matInfo.texture) {
+        var url = matInfo.texture;
+        if (!(url in self._texURLtoTerrainID)) {
+            self._texURLtoTerrainID[url] = self._idCounter++;
+        }
+        return self._texURLtoTerrainID[url]
+    }
+
+    // plain color materials with an alpha value are unique by alpha
+    var alpha = matInfo.alpha;
+    if (alpha > 0 && alpha < 1) return 10 + Math.round(alpha * 100)
+
+    // the only remaining case is the baseline, which always reuses one fixed ID
+    return 1
+}
+
+
+/**
+ * Create (choose) a material for a given set of block material properties
+ * @param {TerrainMatManager} self
+ * @param {number} [blockMatID=0]
+ * @returns {import('@babylonjs/core').Material}
+ */
+function createTerrainMat(self, blockMatID = 0) {
+    var noa = self.parent.noa;
+    var matInfo = noa.registry.getMaterialData(blockMatID);
+
+    // custom render mats are just reused
+    if (matInfo.renderMat) return matInfo.renderMat
+
+    var isAnimated = (matInfo.flowSpeed > 0);
+
+    // if no texture: use a basic flat material, possibly with alpha or animation
+    if (!matInfo.texture) {
+        var needsAlpha = (matInfo.alpha > 0 && matInfo.alpha < 1);
+        if (!needsAlpha && !isAnimated) return self._defaultMat
+        var matName = 'terrain-' + (isAnimated ? 'animated-' : 'alpha-') + blockMatID;
+        var plainMat = noa.rendering.makeStandardMaterial(matName);
+        plainMat.alpha = matInfo.alpha;
+
+        // add flow animation plugin if needed
+        if (isAnimated) {
+            new FlowAnimationPlugin(plainMat, matInfo.flowSpeed, matInfo.flowDirection, matInfo.flowPatternLength);
+            // animated materials can't be frozen since uniforms update each frame
+        } else {
+            plainMat.freeze();
+        }
+        return plainMat
+    }
+
+    // remaining case is a new material with a diffuse texture
+    var scene = noa.rendering.getScene();
+    var mat = noa.rendering.makeStandardMaterial('terrain-textured-' + blockMatID);
+    var texURL = matInfo.texture;
+    var sampling = texture.Texture.NEAREST_SAMPLINGMODE;
+    var tex = new texture.Texture(texURL, scene, true, false, sampling);
+    if (matInfo.texHasAlpha) tex.hasAlpha = true;
+    mat.diffuseTexture = tex;
+
+    // if texture is an atlas, apply material plugin
+    // and check whether any material for the atlas needs alpha
+    if (matInfo.atlasIndex >= 0) {
+        new TerrainMaterialPlugin(mat, tex);
+        if (noa.registry._textureNeedsAlpha(matInfo.texture)) {
+            tex.hasAlpha = true;
+        }
+    }
+
+    // add flow animation plugin if needed
+    if (isAnimated) {
+        new FlowAnimationPlugin(mat, matInfo.flowSpeed, matInfo.flowDirection, matInfo.flowPatternLength);
+        // animated materials can't be frozen since uniforms update each frame
+    } else {
+        mat.freeze();
+    }
+
+    return mat
+}
+
+/**
+ * Intermediate face data structures for terrain meshing.
+ * @module terrain/faceData
+ */
+
+/**
+ * Intermediate struct to hold data for a bunch of merged block faces.
+ * The greedy mesher produces these (one per terrainID),
+ * and the mesh builder turns each one into a Mesh instance.
+ */
+class MeshedFaceData {
+    constructor() {
+        /** @type {number} */
+        this.terrainID = 0;
+        /** @type {number} */
+        this.numFaces = 0;
+        // following arrays are all one element per quad
+        /** @type {number[]} */
+        this.matIDs = [];
+        /** @type {number[]} */
+        this.dirs = [];
+        /** @type {number[]} */
+        this.is = [];
+        /** @type {number[]} */
+        this.js = [];
+        /** @type {number[]} */
+        this.ks = [];
+        /** @type {number[]} */
+        this.wids = [];
+        /** @type {number[]} */
+        this.hts = [];
+        /** @type {number[]} */
+        this.packedAO = [];
+    }
+}
+
+/**
+ * Extremely naive object pool for MeshedFaceData objects.
+ * Avoids allocations in the hot meshing path.
+ */
 var faceDataPool = (() => {
-    var arr = [], ix = 0;
+    /** @type {MeshedFaceData[]} */
+    var arr = [];
+    var ix = 0;
     var get = () => {
-        if (ix >= arr.length) arr.push(new MeshedFaceData);
+        if (ix >= arr.length) arr.push(new MeshedFaceData());
         ix++;
         return arr[ix - 1]
     };
@@ -9826,318 +9329,32 @@ var faceDataPool = (() => {
     return { get, reset }
 })();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /**
- * 
- * 
- * 
- * 
- *       Mesh Builder - consumes all the raw data in geomData to build
- *          Babylon.js mesh/submeshes, ready to be added to the scene
- * 
- * 
- * 
- * 
- * 
+ * Ambient occlusion helper functions for terrain meshing.
+ * @module terrain/aoHelpers
  */
 
-/** @param {import('../index').Engine} noa  */
-function MeshBuilder(noa, terrainMatManager) {
-
-    /** 
-     * Consume the intermediate FaceData struct and produce
-     * actual mesehes the 3D engine can render
-     * @param {Object.<string, MeshedFaceData>} faceDataSet  
-    */
-    this.buildMesh = function (chunk, faceDataSet, ignoreMaterials) {
-        var scene = noa.rendering.getScene();
-
-        var doAO = noa.rendering.useAO;
-        var aoVals = noa.rendering.aoVals;
-        var revAoVal = noa.rendering.revAoVal;
-
-        var atlasIndexLookup = noa.registry._matAtlasIndexLookup;
-        var matColorLookup = noa.registry._materialColorLookup;
-        var white = [1, 1, 1];
-
-
-
-
-        // geometry data is already keyed by terrain type, so build
-        // one mesh per geomData object in the hash
-        var meshes = [];
-        for (var key in faceDataSet) {
-            var faceData = faceDataSet[key];
-            var terrainID = faceData.terrainID;
-
-            // will this mesh need texture atlas indexes?
-            var usesAtlas = false;
-            if (!ignoreMaterials) {
-                var firstIx = atlasIndexLookup[faceData.matIDs[0]];
-                usesAtlas = (firstIx >= 0);
-            }
-
-            // build the necessary arrays
-            var nf = faceData.numFaces;
-            var indices = new Uint16Array(nf * 6);
-            var positions = new Float32Array(nf * 12);
-            var normals = new Float32Array(nf * 12);
-            var colors = new Float32Array(nf * 16);
-            var uvs = new Float32Array(nf * 8);
-            var atlasIndexes;
-            if (usesAtlas) atlasIndexes = new Float32Array(nf * 4);
-
-            // scan all faces in the struct, creating data for each
-            for (var f = 0; f < faceData.numFaces; f++) {
-
-                // basic data from struct
-                var matID = faceData.matIDs[f];
-                var materialDir = faceData.dirs[f];  // 0..5: x,-x, y,-y, z,-z
-
-                var i = faceData.is[f];
-                var j = faceData.js[f];
-                var k = faceData.ks[f];
-                var w = faceData.wids[f];
-                var h = faceData.hts[f];
-                var axis = (materialDir / 2) | 0;
-                var dir = (materialDir % 2) ? -1 : 1;
-
-
-                addPositionValues(positions, f, i, j, k, axis, w, h);
-                addUVs(uvs, f, axis, w, h, dir);
-
-                var norms = [0, 0, 0];
-                norms[axis] = dir;
-                addNormalValues(normals, f, norms);
-
-                var ao = faceData.packedAO[f];
-                var [A, B, C, D] = unpackAOMask(ao);
-                var triDir = decideTriDir(A, B, C, D);
-
-                addIndexValues(indices, f, axis, dir, triDir);
-
-                if (usesAtlas) {
-                    var atlasIndex = atlasIndexLookup[matID];
-                    addAtlasIndices(atlasIndexes, f, atlasIndex);
-                }
-
-                var matColor = matColorLookup[matID] || white;
-                if (doAO) {
-                    pushMeshColors(colors, f, matColor, aoVals, revAoVal, A, B, C, D);
-                } else {
-                    pushMeshColors_noAO(colors, f, matColor);
-                }
-            }
-
-
-
-            // the mesh and vertexData object
-            var name = `chunk_${chunk.requestID}_${terrainID}`;
-            var mesh$1 = new mesh.Mesh(name, scene);
-            var vdat = new mesh_vertexData.VertexData();
-
-            // finish the mesh
-            vdat.positions = positions;
-            vdat.indices = indices;
-            vdat.normals = normals;
-            vdat.colors = colors;
-            vdat.uvs = uvs;
-            vdat.applyToMesh(mesh$1);
-
-            // meshes using a texture atlas need atlasIndices
-            if (usesAtlas) {
-                mesh$1.setVerticesData('texAtlasIndices', atlasIndexes, false, 1);
-            }
-
-            // disable some unnecessary bounding checks
-            mesh$1.isPickable = false;
-            mesh$1.doNotSyncBoundingInfo = true;
-            mesh$1._refreshBoundingInfo = () => mesh$1;
-
-            // materials wrangled by external module
-            if (!ignoreMaterials) {
-                mesh$1.material = terrainMatManager.getMaterial(terrainID);
-            }
-
-            // done
-            meshes.push(mesh$1);
-        }
-
-        return meshes
-    };
-
-
-
-
-    // HELPERS ---- these could probably be simplified and less magical
-
-    function addPositionValues(posArr, faceNum, i, j, k, axis, w, h) {
-        var offset = faceNum * 12;
-
-        var loc = [i, j, k];
-        var du = [0, 0, 0];
-        var dv = [0, 0, 0];
-        du[(axis === 2) ? 0 : 2] = w;
-        dv[(axis === 1) ? 0 : 1] = h;
-
-        for (var ix = 0; ix < 3; ix++) {
-            posArr[offset + ix] = loc[ix];
-            posArr[offset + 3 + ix] = loc[ix] + du[ix];
-            posArr[offset + 6 + ix] = loc[ix] + du[ix] + dv[ix];
-            posArr[offset + 9 + ix] = loc[ix] + dv[ix];
-        }
-    }
-
-
-
-    function addUVs(uvArr, faceNum, d, w, h, dir) {
-        var offset = faceNum * 8;
-        var epsilon = 0;
-        for (var i = 0; i < 8; i++) uvArr[offset + i] = epsilon;
-        if (d === 0) {
-            uvArr[offset + 1] = uvArr[offset + 3] = h - epsilon;
-            uvArr[offset + 2] = uvArr[offset + 4] = dir * w;
-        } else if (d === 1) {
-            uvArr[offset + 1] = uvArr[offset + 7] = w - epsilon;
-            uvArr[offset + 4] = uvArr[offset + 6] = dir * h;
-        } else {
-            uvArr[offset + 1] = uvArr[offset + 3] = h - epsilon;
-            uvArr[offset + 2] = uvArr[offset + 4] = -dir * w;
-        }
-    }
-
-    function addNormalValues(normArr, faceNum, norms) {
-        var offset = faceNum * 12;
-        for (var i = 0; i < 12; i++) {
-            normArr[offset + i] = norms[i % 3];
-        }
-    }
-
-    function addIndexValues(indArr, faceNum, axis, dir, triDir) {
-        var offset = faceNum * 6;
-        var baseIndex = faceNum * 4;
-        if (axis === 0) dir = -dir;
-        var ix = (dir < 0) ? 0 : 1;
-        if (!triDir) ix += 2;
-        var indexVals = indexLists[ix];
-        for (var i = 0; i < 6; i++) {
-            indArr[offset + i] = baseIndex + indexVals[i];
-        }
-    }
-    var indexLists = [
-        [0, 1, 2, 0, 2, 3], // base
-        [0, 2, 1, 0, 3, 2], // flipped
-        [1, 2, 3, 1, 3, 0], // opposite triDir
-        [1, 3, 2, 1, 0, 3], // opposite triDir
-    ];
-
-
-
-
-    function addAtlasIndices(indArr, faceNum, atlasIndex) {
-        var offset = faceNum * 4;
-        for (var i = 0; i < 4; i++) {
-            indArr[offset + i] = atlasIndex;
-        }
-    }
-
-    function decideTriDir(A, B, C, D) {
-        // this bit is pretty magical..
-        // (true means split along the a00-a11 axis)
-        if (A === C) {
-            return (D === B) ? (D === 2) : true
-        } else {
-            return (D === B) ? false : (A + C > D + B)
-        }
-    }
-
-    function pushMeshColors_noAO(colors, faceNum, col) {
-        var offset = faceNum * 16;
-        for (var i = 0; i < 16; i += 4) {
-            colors[offset + i] = col[0];
-            colors[offset + i + 1] = col[1];
-            colors[offset + i + 2] = col[2];
-            colors[offset + i + 3] = 1;
-        }
-    }
-
-    function pushMeshColors(colors, faceNum, col, aoVals, revAo, A, B, C, D) {
-        var offset = faceNum * 16;
-        pushAOColor(colors, offset, col, A, aoVals, revAo);
-        pushAOColor(colors, offset + 4, col, D, aoVals, revAo);
-        pushAOColor(colors, offset + 8, col, C, aoVals, revAo);
-        pushAOColor(colors, offset + 12, col, B, aoVals, revAo);
-    }
-
-    // premultiply vertex colors by value depending on AO level
-    // then push them into color array
-    function pushAOColor(colors, ix, baseCol, ao, aoVals, revAoVal) {
-        var mult = (ao === 0) ? revAoVal : aoVals[ao - 1];
-        colors[ix] = baseCol[0] * mult;
-        colors[ix + 1] = baseCol[1] * mult;
-        colors[ix + 2] = baseCol[2] * mult;
-        colors[ix + 3] = 1;
-    }
-
-}
-
-
-
-
-
-
-
-
-/*
- *
- *
- *
- *
- *          SHARED HELPERS - used by both main classes
- *
- *
- *
- *
- *
-*/
-
-
-
-
 /**
+ * For a given face, find occlusion levels for each vertex,
+ * then pack 4 such (2-bit) values into one Uint8 value.
  *
+ * Occlusion levels:
+ *   1 is flat ground, 2 is partial occlusion, 3 is max (corners)
+ *   0 is "reverse occlusion" - an unoccluded exposed edge
  *
+ * Packing order var(bit offset):
+ *     B(2)  -  C(6)   ^  K
+ *      -        -     +> J
+ *     A(0)  -  D(4)
  *
- *  packAOMask:
- *
- *    For a given face, find occlusion levels for each vertex, then
- *    pack 4 such (2-bit) values into one Uint8 value
- * 
- *  Occlusion levels:
- *    1 is flat ground, 2 is partial occlusion, 3 is max (corners)
- *    0 is "reverse occlusion" - an unoccluded exposed edge 
- *  Packing order var(bit offset):
- * 
- *      B(2)  -  C(6)   ^  K
- *       -        -     +> J
- *      A(0)  -  D(4)
- * 
-*/
-
+ * @param {function(number, number, number): boolean} isSolid
+ * @param {number} ipos
+ * @param {number} ineg
+ * @param {number} j
+ * @param {number} k
+ * @param {boolean} [skipReverse=false]
+ * @returns {number}
+ */
 function packAOMask(isSolid, ipos, ineg, j, k, skipReverse = false) {
     var A = 1;
     var B = 1;
@@ -10161,7 +9378,7 @@ function packAOMask(isSolid, ipos, ineg, j, k, skipReverse = false) {
         return C << 6 | D << 4 | B << 2 | A
     }
 
-    // simpler logic if skipping reverse AO?
+    // simpler logic if skipping reverse AO
     if (skipReverse) {
         // treat corner as occlusion 3 only if not occluded already
         if (C === 1 && (isSolid(ipos, j + 1, k + 1))) { C = 2; }
@@ -10216,18 +9433,787 @@ function packAOMask(isSolid, ipos, ineg, j, k, skipReverse = false) {
 }
 
 /**
- * 
- *      Takes in a packed AO value representing a face,
- *      and returns four 2-bit numbers for the AO levels
- *      at the four corners.
- *      
-*/
+ * Takes in a packed AO value representing a face,
+ * and returns four 2-bit numbers for the AO levels at the four corners.
+ * @param {number} aomask
+ * @returns {[number, number, number, number]}
+ */
 function unpackAOMask(aomask) {
     var A = aomask & 3;
     var B = (aomask >> 2) & 3;
     var D = (aomask >> 4) & 3;
     var C = (aomask >> 6) & 3;
     return [A, B, C, D]
+}
+
+/**
+ * Metadata flag used to identify terrain meshes
+ * @type {string}
+ */
+var terrainMeshFlag = 'noa_chunk_terrain_mesh';
+
+/**
+ * Reusable coordinate array to avoid allocations in hot paths
+ * @type {number[]}
+ */
+var tempCoordArray = [0, 0, 0];
+
+/**
+ * Greedy meshing algorithm for terrain.
+ * @module terrain/greedyMesher
+ *
+ * Originally based on algorithm by Mikola Lysenko:
+ *     http://0fps.net/2012/07/07/meshing-minecraft-part-2/
+ * but probably no code remaining from there anymore.
+ * Ad-hoc AO handling made of cobwebs and dreams.
+ *
+ * Takes in a Chunk instance, and returns an object containing
+ * GeometryData structs, keyed by terrain material ID,
+ * which the terrain builder can then make into meshes.
+ */
+
+/**
+ * Greedy mesher - takes a Chunk instance and returns face data
+ * keyed by terrain material ID.
+ * @internal
+ */
+class GreedyMesher {
+    /**
+     * @param {import('./index.js').TerrainMesher} parent
+     */
+    constructor(parent) {
+        /** @type {import('./index.js').TerrainMesher} */
+        this.parent = parent;
+
+        // class-wide cached structs
+        /** @type {Int16Array} */
+        this._maskCache = new Int16Array(16);
+        /** @type {Int16Array} */
+        this._aoMaskCache = new Int16Array(16);
+    }
+
+    /**
+     * Entry point - mesh a chunk and return face data by terrain ID
+     * @param {import('../chunk.js').Chunk} chunk
+     * @param {boolean} ignoreMaterials
+     * @returns {Object.<string, MeshedFaceData>} keyed by terrain material ID
+     */
+    mesh(chunk, ignoreMaterials) {
+        var cs = chunk.size;
+        var noa = this.parent.noa;
+        var matManager = this.parent._matManager;
+
+        // terrain ID accessor can be overridden for hacky reasons
+        var realGetTerrainID = matManager.getTerrainMatId.bind(matManager);
+        var fakeGetTerrainID = (matID) => 1;
+        var terrainIDgetter = ignoreMaterials ? fakeGetTerrainID : realGetTerrainID;
+
+        // no internal faces for empty or entirely solid chunks
+        var edgesOnly = (chunk._isEmpty || chunk._isFull);
+
+        /** @type {Object.<string, MeshedFaceData>} */
+        var faceDataSet = {};
+        faceDataPool.reset();
+
+        // Sweep over each axis, mapping axes to [d,u,v]
+        for (var d = 0; d < 3; ++d) {
+            var u = (d === 2) ? 0 : 2;
+            var v = (d === 1) ? 0 : 1;
+
+            // transposed ndarrays of nearby chunk voxels (self and neighbors)
+            var nabVoxelsArr = chunk._neighbors.data.map(c => {
+                if (c && c.voxels) return c.voxels.transpose(d, u, v)
+                return null
+            });
+
+            // ndarray of the previous, similarly transposed
+            var nabVoxelsT = ndarray(nabVoxelsArr, [3, 3, 3])
+                .lo(1, 1, 1)
+                .transpose(d, u, v);
+
+            // embiggen the cached mask arrays if needed - grow exponentially to reduce allocations
+            if (this._maskCache.length < cs * cs) {
+                var newSize = Math.max(cs * cs, this._maskCache.length * 2);
+                this._maskCache = new Int16Array(newSize);
+                this._aoMaskCache = new Int16Array(newSize);
+            }
+
+            // sets up transposed accessor for querying solidity of (i,j,k)
+            prepareSolidityLookup(noa, nabVoxelsT, cs);
+
+            // mesh plane between this chunk and previous neighbor on i axis
+            var prev = nabVoxelsT.get(-1, 0, 0);
+            var here = nabVoxelsT.get(0, 0, 0);
+            if (prev) {
+                // offset version of neighbor to make queries work at i=-1
+                var prevOff = prev.lo(cs, 0, 0);
+                var nFaces = this._constructMeshMask(d, prevOff, -1, here, 0, noa);
+
+                if (nFaces > 0) {
+                    this._constructGeometryFromMasks(0, d, u, v, cs, cs, nFaces, faceDataSet, terrainIDgetter, noa);
+                }
+            }
+
+            // if only doing edges, we're done with this axis
+            if (edgesOnly) continue
+
+            // mesh the rest of the planes internal to this chunk
+            // note only looping up to (size-1), skipping final coord so as
+            // not to duplicate faces at chunk borders
+            for (var i = 0; i < cs - 1; i++) {
+                // maybe skip y axis, if both layers are all the same voxel
+                if (d === 1) {
+                    var v1 = chunk._wholeLayerVoxel[i];
+                    if (v1 >= 0 && v1 === chunk._wholeLayerVoxel[i + 1]) {
+                        continue
+                    }
+                }
+
+                // pass in layer array for skip checks, only if not already checked
+                var layerVoxRef = (d === 1) ? null : chunk._wholeLayerVoxel;
+
+                var nf = this._constructMeshMask(d, here, i, here, i + 1, noa, layerVoxRef);
+                if (nf > 0) {
+                    this._constructGeometryFromMasks(i + 1, d, u, v, cs, cs, nf, faceDataSet, terrainIDgetter, noa);
+                }
+            }
+
+            // we skip the i-positive neighbor so as not to duplicate edge faces
+        }
+
+        return faceDataSet
+    }
+
+    /**
+     * Build a 2D array of mask values representing whether a mesh face is needed at each position.
+     * Each mask value is a terrain material ID, negative if the face needs to point
+     * in the -i direction (towards voxel arr A).
+     * @returns {number} number of mesh faces found
+     */
+    _constructMeshMask(d, arrA, iA, arrB, iB, noa, wholeLayerVoxel = null) {
+        var len = arrA.shape[1];
+        var mask = this._maskCache;
+        var aoMask = this._aoMaskCache;
+        var doAO = noa.rendering.useAO;
+        var skipRevAo = (noa.rendering.revAoVal === noa.rendering.aoVals[0]);
+
+        var opacityLookup = noa.registry._opacityLookup;
+        var getMaterial = noa.registry.getBlockFaceMaterial;
+        var materialDir = d * 2;
+
+        // mask is iterated by a simple integer, both here and later when
+        // merging meshes, so the j/k order must be the same in both places
+        var n = 0;
+
+        // set up for quick ndarray traversals
+        var indexA = arrA.index(iA, 0, 0);
+        var jstrideA = arrA.stride[1];
+        var kstrideA = arrA.stride[2];
+        var indexB = arrB.index(iB, 0, 0);
+        var jstrideB = arrB.stride[1];
+        var kstrideB = arrB.stride[2];
+
+        var facesFound = 0;
+
+        for (var k = 0; k < len; ++k) {
+            var dA = indexA;
+            var dB = indexB;
+            indexA += kstrideA;
+            indexB += kstrideB;
+
+            // skip this second axis, if whole layer is same voxel?
+            if (wholeLayerVoxel && wholeLayerVoxel[k] >= 0) {
+                n += len;
+                continue
+            }
+
+            for (var j = 0; j < len; j++, n++, dA += jstrideA, dB += jstrideB) {
+                // mask[n] represents the face needed between the two voxel layers
+                // for now, assume we never have two faces in both directions
+
+                // note that mesher zeroes out the mask as it goes, so there's
+                // no need to zero it here when no face is needed
+
+                // IDs at i-1,j,k  and  i,j,k
+                var id0 = arrA.data[dA];
+                var id1 = arrB.data[dB];
+
+                // most common case: never a face between same voxel IDs, so skip out early
+                if (id0 === id1) continue
+
+                // no face if both blocks are opaque
+                var op0 = opacityLookup[id0];
+                var op1 = opacityLookup[id1];
+                if (op0 && op1) continue
+
+                // also no face if both block faces have the same block material
+                var m0 = getMaterial(id0, materialDir) || 0;
+                var m1 = getMaterial(id1, materialDir + 1) || 0;
+                if (m0 === m1) continue
+
+                // choose which block face to draw:
+                //   * if either block is opaque draw that one
+                //   * if either material is missing draw the other one
+                if (op0 || m1 === 0) {
+                    mask[n] = m0;
+                    if (doAO) aoMask[n] = packAOMask(voxelIsSolid, iB, iA, j, k, skipRevAo);
+                    facesFound++;
+                } else if (op1 || m0 === 0) {
+                    mask[n] = -m1;
+                    if (doAO) aoMask[n] = packAOMask(voxelIsSolid, iA, iB, j, k, skipRevAo);
+                    facesFound++;
+                } else ;
+            }
+        }
+        return facesFound
+    }
+
+    /**
+     * Greedy meshing inner loop - construct geometry data from the masks
+     */
+    _constructGeometryFromMasks(i, d, u, v, len1, len2, numFaces, faceDataSet, terrainIDgetter, noa) {
+        var doAO = noa.rendering.useAO;
+        var mask = this._maskCache;
+        var aomask = this._aoMaskCache;
+
+        var n = 0;
+        var materialDir = d * 2;
+        // reuse array to avoid allocation in hot path
+        var coords = tempCoordArray;
+        coords[0] = 0;
+        coords[1] = 0;
+        coords[2] = 0;
+        coords[d] = i;
+
+        var maskCompareFcn = (doAO) ? maskCompare : maskCompare_noAO;
+
+        for (var k = 0; k < len2; ++k) {
+            var w = 1;
+            var h = 1;
+            for (var j = 0; j < len1; j += w, n += w) {
+                var maskVal = mask[n] | 0;
+                if (!maskVal) {
+                    w = 1;
+                    continue
+                }
+
+                var ao = aomask[n] | 0;
+
+                // Compute width and height of area with same mask/aomask values
+                for (w = 1; w < len1 - j; ++w) {
+                    if (!maskCompareFcn(n + w, mask, maskVal, aomask, ao)) break
+                }
+
+                OUTER:
+                for (h = 1; h < len2 - k; ++h) {
+                    for (var m = 0; m < w; ++m) {
+                        var ix = n + m + h * len1;
+                        if (!maskCompareFcn(ix, mask, maskVal, aomask, ao)) break OUTER
+                    }
+                }
+
+                // for testing: doing the following will disable greediness
+                //w=h=1
+
+                // materialID and terrain ID type for the face
+                var matID = Math.abs(maskVal);
+                var terrainID = terrainIDgetter(matID);
+
+                // if terrainID not seen before, start a new MeshedFaceData
+                // from the extremely naive object pool
+                if (!(terrainID in faceDataSet)) {
+                    var fdFromPool = faceDataPool.get();
+                    fdFromPool.numFaces = 0;
+                    fdFromPool.terrainID = terrainID;
+                    faceDataSet[terrainID] = fdFromPool;
+                }
+
+                // pack one face worth of data into the return struct
+                var faceData = faceDataSet[terrainID];
+                var nf = faceData.numFaces;
+                faceData.numFaces++;
+
+                faceData.matIDs[nf] = matID;
+                coords[u] = j;
+                coords[v] = k;
+                faceData.is[nf] = coords[0];
+                faceData.js[nf] = coords[1];
+                faceData.ks[nf] = coords[2];
+                faceData.wids[nf] = w;
+                faceData.hts[nf] = h;
+                faceData.packedAO[nf] = ao;
+                faceData.dirs[nf] = (maskVal > 0) ? materialDir : materialDir + 1;
+
+                // Face now finished, zero out the used part of the mask
+                for (var hx = 0; hx < h; ++hx) {
+                    for (var wx = 0; wx < w; ++wx) {
+                        mask[n + wx + hx * len1] = 0;
+                    }
+                }
+
+                // exit condition where no more faces are left to mesh
+                numFaces -= w * h;
+                if (numFaces === 0) return
+            }
+        }
+    }
+}
+
+
+// Mask comparison helpers
+function maskCompare(index, mask, maskVal, aomask, aoVal) {
+    if (maskVal !== mask[index]) return false
+    if (aoVal !== aomask[index]) return false
+    return true
+}
+
+function maskCompare_noAO(index, mask, maskVal, aomask, aoVal) {
+    if (maskVal !== mask[index]) return false
+    return true
+}
+
+
+/*
+ * Solidity lookup system
+ *
+ * Rigging for a transposed (i,j,k) => boolean solidity lookup,
+ * that knows how to query into neighboring chunks at edges.
+ * This sets up the indirection used by `voxelIsSolid` below.
+ */
+
+var solidityLookupInittedSize = -1;
+var voxelIDtoSolidity = [false, true];
+var voxLookup = Array(27).fill(null);
+var voxTypeLookup = Array(27).fill(0);
+var coordToLoc = [0, 1, 1, 1, 1, 1, 2];
+var edgeCoordLookup = [3, 0, 1, 2, 3, 0];
+var missingCoordLookup = [0, 0, 1, 2, 3, 3];
+
+/**
+ * @param {import('../../index.js').Engine} noa
+ */
+function prepareSolidityLookup(noa, nabVoxelsT, size) {
+    if (solidityLookupInittedSize !== size) {
+        solidityLookupInittedSize = size;
+        voxelIDtoSolidity = noa.registry._solidityLookup;
+
+        for (var x = -1; x < size + 1; x++) {
+            var loc = (x < 0) ? 0 : (x < size) ? 1 : 2;
+            coordToLoc[x + 1] = [0, 1, 2][loc];
+            edgeCoordLookup[x + 1] = [size - 1, x, 0][loc];
+            missingCoordLookup[x + 1] = [0, x, size - 1][loc];
+        }
+    }
+
+    var centerChunk = nabVoxelsT.get(0, 0, 0);
+    for (var i = 0; i < 3; i++) {
+        for (var j = 0; j < 3; j++) {
+            for (var k = 0; k < 3; k++) {
+                var ix = i * 9 + j * 3 + k;
+                var nab = nabVoxelsT.get(i - 1, j - 1, k - 1);
+                var type = 0;
+                if (!nab) type = 1;
+                if (nab === centerChunk) type = 2;
+                voxTypeLookup[ix] = type;
+                voxLookup[ix] = nab || centerChunk;
+            }
+        }
+    }
+}
+
+/**
+ * Query solidity at a transposed (i,j,k) coordinate
+ * @param {number} i
+ * @param {number} j
+ * @param {number} k
+ * @returns {boolean}
+ */
+function voxelIsSolid(i, j, k) {
+    var li = coordToLoc[i + 1];
+    var lj = coordToLoc[j + 1];
+    var lk = coordToLoc[k + 1];
+    var ix = li * 9 + lj * 3 + lk;
+    var voxArray = voxLookup[ix];
+    var type = voxTypeLookup[ix];
+    if (type === 2) {
+        return voxelIDtoSolidity[voxArray.get(i, j, k)]
+    }
+    var lookup = [edgeCoordLookup, missingCoordLookup][type];
+    var ci = lookup[i + 1];
+    var cj = lookup[j + 1];
+    var ck = lookup[k + 1];
+    return voxelIDtoSolidity[voxArray.get(ci, cj, ck)]
+}
+
+/**
+ * Mesh construction from greedy mesher output.
+ * @module terrain/meshBuilder
+ *
+ * Consumes all the raw data in faceDataSet to build
+ * Babylon.js mesh/submeshes, ready to be added to the scene.
+ */
+
+/**
+ * Mesh Builder - consumes raw face data to build
+ * Babylon.js mesh/submeshes ready to be added to the scene.
+ * @internal
+ */
+class MeshBuilder {
+    /**
+     * @param {import('./index.js').TerrainMesher} parent
+     */
+    constructor(parent) {
+        /** @type {import('./index.js').TerrainMesher} */
+        this.parent = parent;
+    }
+
+    /**
+     * Consume the intermediate FaceData struct and produce
+     * actual meshes the 3D engine can render
+     * @param {import('../chunk.js').Chunk} chunk
+     * @param {Object.<string, MeshedFaceData>} faceDataSet
+     * @param {boolean} ignoreMaterials
+     * @returns {import('@babylonjs/core').Mesh[]}
+     */
+    buildMesh(chunk, faceDataSet, ignoreMaterials) {
+        var noa = this.parent.noa;
+        var scene = noa.rendering.getScene();
+
+        var doAO = noa.rendering.useAO;
+        var aoVals = noa.rendering.aoVals;
+        var revAoVal = noa.rendering.revAoVal;
+
+        var atlasIndexLookup = noa.registry._matAtlasIndexLookup;
+        var matColorLookup = noa.registry._materialColorLookup;
+        var white = [1, 1, 1];
+
+        // geometry data is already keyed by terrain type, so build
+        // one mesh per faceData object in the hash
+        var meshes = [];
+        for (var key in faceDataSet) {
+            var faceData = faceDataSet[key];
+            var terrainID = faceData.terrainID;
+
+            // will this mesh need texture atlas indexes?
+            var usesAtlas = false;
+            if (!ignoreMaterials) {
+                var firstIx = atlasIndexLookup[faceData.matIDs[0]];
+                usesAtlas = (firstIx >= 0);
+            }
+
+            // build the necessary arrays
+            var nf = faceData.numFaces;
+            var indices = new Uint16Array(nf * 6);
+            var positions = new Float32Array(nf * 12);
+            var normals = new Float32Array(nf * 12);
+            var colors = new Float32Array(nf * 16);
+            var uvs = new Float32Array(nf * 8);
+            var atlasIndexes;
+            if (usesAtlas) atlasIndexes = new Float32Array(nf * 4);
+
+            // scan all faces in the struct, creating data for each
+            for (var f = 0; f < faceData.numFaces; f++) {
+                // basic data from struct
+                var matID = faceData.matIDs[f];
+                var materialDir = faceData.dirs[f];  // 0..5: x,-x, y,-y, z,-z
+
+                var i = faceData.is[f];
+                var j = faceData.js[f];
+                var k = faceData.ks[f];
+                var w = faceData.wids[f];
+                var h = faceData.hts[f];
+                var axis = (materialDir / 2) | 0;
+                var dir = (materialDir % 2) ? -1 : 1;
+
+                addPositionValues(positions, f, i, j, k, axis, w, h);
+                addUVs(uvs, f, axis, w, h, dir);
+
+                var norms = [0, 0, 0];
+                norms[axis] = dir;
+                addNormalValues(normals, f, norms);
+
+                var ao = faceData.packedAO[f];
+                var [A, B, C, D] = unpackAOMask(ao);
+                var triDir = decideTriDir(A, B, C, D);
+
+                addIndexValues(indices, f, axis, dir, triDir);
+
+                if (usesAtlas) {
+                    var atlasIndex = atlasIndexLookup[matID];
+                    addAtlasIndices(atlasIndexes, f, atlasIndex);
+                }
+
+                var matColor = matColorLookup[matID] || white;
+                if (doAO) {
+                    pushMeshColors(colors, f, matColor, aoVals, revAoVal, A, B, C, D);
+                } else {
+                    pushMeshColors_noAO(colors, f, matColor);
+                }
+            }
+
+            // the mesh and vertexData object
+            var name = `chunk_${chunk.requestID}_${terrainID}`;
+            var mesh$1 = new mesh.Mesh(name, scene);
+            var vdat = new mesh_vertexData.VertexData();
+
+            // finish the mesh
+            vdat.positions = positions;
+            vdat.indices = indices;
+            vdat.normals = normals;
+            vdat.colors = colors;
+            vdat.uvs = uvs;
+            vdat.applyToMesh(mesh$1);
+
+            // meshes using a texture atlas need atlasIndices
+            if (usesAtlas) {
+                mesh$1.setVerticesData('texAtlasIndices', atlasIndexes, false, 1);
+            }
+
+            // disable some unnecessary bounding checks
+            mesh$1.isPickable = false;
+            mesh$1.doNotSyncBoundingInfo = true;
+            mesh$1._refreshBoundingInfo = () => mesh$1;
+
+            // materials wrangled by external module
+            if (!ignoreMaterials) {
+                mesh$1.material = this.parent._matManager.getMaterial(terrainID);
+            }
+
+            meshes.push(mesh$1);
+        }
+
+        return meshes
+    }
+}
+
+
+/*
+ * Helper functions for building mesh arrays
+ * These could probably be simplified and less magical
+ */
+
+/**
+ * @param {Float32Array} posArr
+ */
+function addPositionValues(posArr, faceNum, i, j, k, axis, w, h) {
+    var offset = faceNum * 12;
+
+    var loc = [i, j, k];
+    var du = [0, 0, 0];
+    var dv = [0, 0, 0];
+    du[(axis === 2) ? 0 : 2] = w;
+    dv[(axis === 1) ? 0 : 1] = h;
+
+    for (var ix = 0; ix < 3; ix++) {
+        posArr[offset + ix] = loc[ix];
+        posArr[offset + 3 + ix] = loc[ix] + du[ix];
+        posArr[offset + 6 + ix] = loc[ix] + du[ix] + dv[ix];
+        posArr[offset + 9 + ix] = loc[ix] + dv[ix];
+    }
+}
+
+/**
+ * @param {Float32Array} uvArr
+ */
+function addUVs(uvArr, faceNum, d, w, h, dir) {
+    var offset = faceNum * 8;
+    var epsilon = 0;
+    for (var i = 0; i < 8; i++) uvArr[offset + i] = epsilon;
+    if (d === 0) {
+        uvArr[offset + 1] = uvArr[offset + 3] = h - epsilon;
+        uvArr[offset + 2] = uvArr[offset + 4] = dir * w;
+    } else if (d === 1) {
+        uvArr[offset + 1] = uvArr[offset + 7] = w - epsilon;
+        uvArr[offset + 4] = uvArr[offset + 6] = dir * h;
+    } else {
+        uvArr[offset + 1] = uvArr[offset + 3] = h - epsilon;
+        uvArr[offset + 2] = uvArr[offset + 4] = -dir * w;
+    }
+}
+
+/**
+ * @param {Float32Array} normArr
+ */
+function addNormalValues(normArr, faceNum, norms) {
+    var offset = faceNum * 12;
+    for (var i = 0; i < 12; i++) {
+        normArr[offset + i] = norms[i % 3];
+    }
+}
+
+var indexLists = [
+    [0, 1, 2, 0, 2, 3], // base
+    [0, 2, 1, 0, 3, 2], // flipped
+    [1, 2, 3, 1, 3, 0], // opposite triDir
+    [1, 3, 2, 1, 0, 3], // opposite triDir
+];
+
+/**
+ * @param {Uint16Array} indArr
+ */
+function addIndexValues(indArr, faceNum, axis, dir, triDir) {
+    var offset = faceNum * 6;
+    var baseIndex = faceNum * 4;
+    if (axis === 0) dir = -dir;
+    var ix = (dir < 0) ? 0 : 1;
+    if (!triDir) ix += 2;
+    var indexVals = indexLists[ix];
+    for (var i = 0; i < 6; i++) {
+        indArr[offset + i] = baseIndex + indexVals[i];
+    }
+}
+
+/**
+ * @param {Float32Array} indArr
+ */
+function addAtlasIndices(indArr, faceNum, atlasIndex) {
+    var offset = faceNum * 4;
+    for (var i = 0; i < 4; i++) {
+        indArr[offset + i] = atlasIndex;
+    }
+}
+
+/**
+ * Decide triangle direction based on AO values - this bit is pretty magical.
+ * (true means split along the a00-a11 axis)
+ */
+function decideTriDir(A, B, C, D) {
+    if (A === C) {
+        return (D === B) ? (D === 2) : true
+    } else {
+        return (D === B) ? false : (A + C > D + B)
+    }
+}
+
+/**
+ * @param {Float32Array} colors
+ */
+function pushMeshColors_noAO(colors, faceNum, col) {
+    var offset = faceNum * 16;
+    for (var i = 0; i < 16; i += 4) {
+        colors[offset + i] = col[0];
+        colors[offset + i + 1] = col[1];
+        colors[offset + i + 2] = col[2];
+        colors[offset + i + 3] = 1;
+    }
+}
+
+/**
+ * @param {Float32Array} colors
+ */
+function pushMeshColors(colors, faceNum, col, aoVals, revAo, A, B, C, D) {
+    var offset = faceNum * 16;
+    pushAOColor(colors, offset, col, A, aoVals, revAo);
+    pushAOColor(colors, offset + 4, col, D, aoVals, revAo);
+    pushAOColor(colors, offset + 8, col, C, aoVals, revAo);
+    pushAOColor(colors, offset + 12, col, B, aoVals, revAo);
+}
+
+/**
+ * Premultiply vertex colors by value depending on AO level
+ * then push them into color array
+ */
+function pushAOColor(colors, ix, baseCol, ao, aoVals, revAoVal) {
+    var mult = (ao === 0) ? revAoVal : aoVals[ao - 1];
+    colors[ix] = baseCol[0] * mult;
+    colors[ix + 1] = baseCol[1] * mult;
+    colors[ix + 2] = baseCol[2] * mult;
+    colors[ix + 3] = 1;
+}
+
+/**
+ * Terrain meshing module - manages terrain mesh generation and materials.
+ * @module terrain
+ *
+ * Top-level entry point: takes a chunk, passes it to the greedy mesher,
+ * gets back an intermediate struct of face data, passes that to the mesh
+ * builder, gets back an array of Mesh objects, and finally puts those
+ * into the 3D engine.
+ */
+
+/**
+ * `noa._terrainMesher` - Top-level terrain meshing coordinator.
+ * @internal
+ */
+class TerrainMesher {
+    /**
+     * @param {import('../../index.js').Engine} noa
+     */
+    constructor(noa) {
+        /** @type {import('../../index.js').Engine} */
+        this.noa = noa;
+
+        // Initialize sub-modules
+        /** @internal */
+        this._matManager = new TerrainMatManager(this);
+        /** @internal */
+        this._greedyMesher = new GreedyMesher(this);
+        /** @internal */
+        this._meshBuilder = new MeshBuilder(this);
+
+        // Expose public properties
+        /** @type {import('@babylonjs/core').Material[]} */
+        this.allTerrainMaterials = this._matManager.allMaterials;
+
+        // internally expose the default flat material used for untextured terrain
+        /** @internal */
+        this._defaultMaterial = this._matManager._defaultMat;
+    }
+
+
+    // ============ CHUNK LIFECYCLE ============
+
+    /**
+     * Set or clean up any per-chunk properties needed for terrain meshing
+     * @param {import('../chunk.js').Chunk} chunk
+     */
+    initChunk(chunk) {
+        chunk._terrainMeshes.length = 0;
+    }
+
+    /**
+     * Dispose all terrain meshes for a chunk
+     * @param {import('../chunk.js').Chunk} chunk
+     */
+    disposeChunk(chunk) {
+        chunk._terrainMeshes.forEach(mesh => {
+            this.noa.emit('removingTerrainMesh', mesh);
+            mesh.dispose();
+        });
+        chunk._terrainMeshes.length = 0;
+    }
+
+
+    // ============ MESHING ============
+
+    /**
+     * Meshing entry point and high-level flow
+     * @param {import('../chunk.js').Chunk} chunk
+     * @param {boolean} [ignoreMaterials=false]
+     */
+    meshChunk(chunk, ignoreMaterials = false) {
+
+        // remove any previous terrain meshes
+        this.disposeChunk(chunk);
+
+        // greedy mesher generates struct of face data
+        var faceDataSet = this._greedyMesher.mesh(chunk, ignoreMaterials);
+
+        // builder generates mesh data (positions, normals, etc)
+        var meshes = this._meshBuilder.buildMesh(chunk, faceDataSet, ignoreMaterials);
+
+        // add meshes to scene and finish
+        meshes.forEach((mesh$1) => {
+            mesh$1.cullingStrategy = mesh.Mesh.CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY;
+            this.noa.rendering.addMeshToScene(mesh$1, true, chunk.pos, chunk);
+            this.noa.emit('addingTerrainMesh', mesh$1);
+            mesh$1.freezeNormals();
+            mesh$1.freezeWorldMatrix();
+            chunk._terrainMeshes.push(mesh$1);
+            if (!mesh$1.metadata) mesh$1.metadata = {};
+            mesh$1.metadata[terrainMeshFlag] = true;
+        });
+    }
 }
 
 var defaults$1 = {
@@ -13614,7 +13600,13 @@ class WorldVoxels {
 
 /**
  * Async chunk generator function signature
- * @typedef {function(number, number, number, number, AbortSignal): Promise<ChunkGeneratorResult|null>} ChunkGeneratorFunction
+ * @callback ChunkGeneratorFunction
+ * @param {number} x - Chunk world x coordinate
+ * @param {number} y - Chunk world y coordinate
+ * @param {number} z - Chunk world z coordinate
+ * @param {number} requestID - Unique request identifier
+ * @param {AbortSignal} signal - Abort signal for cancellation
+ * @returns {Promise<ChunkGeneratorResult|null>} Generated chunk data or null
  */
 
 
@@ -14047,7 +14039,11 @@ var defaultOptions$1 = {
 
 /**
  * Chunk sorting distance function type
- * @typedef {function(number, number, number): number} ChunkSortingDistFn
+ * @callback ChunkSortingDistFn
+ * @param {number} i - Chunk i offset from player
+ * @param {number} j - Chunk j offset from player
+ * @param {number} k - Chunk k offset from player
+ * @returns {number} Distance value for sorting
  */
 
 /**

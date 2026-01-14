@@ -24,7 +24,11 @@ export function sortQueueByDistanceFrom(world: import("./index.js").World, queue
 export const defaultOptions: WorldOptions;
 /**
  * Chunk sorting distance function type
- * @typedef {function(number, number, number): number} ChunkSortingDistFn
+ * @callback ChunkSortingDistFn
+ * @param {number} i - Chunk i offset from player
+ * @param {number} j - Chunk j offset from player
+ * @param {number} k - Chunk k offset from player
+ * @returns {number} Distance value for sorting
  */
 /**
  * Default distance function for chunk sorting - squared Euclidean distance
@@ -47,4 +51,4 @@ export type WorldOptions = {
 /**
  * Chunk sorting distance function type
  */
-export type ChunkSortingDistFn = (arg0: number, arg1: number, arg2: number) => number;
+export type ChunkSortingDistFn = (i: number, j: number, k: number) => number;
