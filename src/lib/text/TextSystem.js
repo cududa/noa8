@@ -177,6 +177,57 @@ export class Text {
 
 
     /**
+     * Load a built-in font by filename (without importing meshwriter-cudu directly).
+     * Returns a promise that resolves with the font data.
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * Bundlers (Vite, webpack) cannot resolve dynamic imports with variable paths.
+     * For browsers, use static imports instead:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * This method is only useful in Node.js environments (server-side rendering, tools).
+     *
+     * @param {string} fontFile - Built-in font filename (e.g., 'helvetica', 'atkinson-hyperlegible-next', 'jura')
+     * @returns {Promise<object>} Font data object
+     */
+    async loadFont(fontFile) {
+        try {
+            var fontModule = await import(`meshwriter-cudu/fonts/${fontFile}`)
+            return fontModule.default
+        } catch (e) {
+            warn('Failed to load font:', fontFile, e.message)
+            throw e
+        }
+    }
+
+
+    /**
+     * Load and register a built-in font in one step.
+     * Convenience method that combines loadFont() and registerFont().
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * See loadFont() documentation for details.
+     *
+     * For browsers, use static imports:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * @param {string} name - Name to register the font as
+     * @param {string} fontFile - Built-in font filename (e.g., 'atkinson-hyperlegible-next')
+     */
+    async loadAndRegisterFont(name, fontFile) {
+        var fontData = await this.loadFont(fontFile)
+        this.registerFont(name, fontData)
+        log('Font registered:', name, 'from', fontFile)
+    }
+
+
+    /**
      * Create 3D text mesh at a world position.
      * Returns a TextHandle for manipulation and disposal.
      *

@@ -15379,6 +15379,7 @@ function includeMeshInAllWorldLights(scene, mesh, textLight, textAmbient) {
 /**
  * Camera-relative direction calculations for text lighting.
  * Handles azimuth/elevation rotation math with reusable vectors.
+ * Includes smoothing to prevent jitter on distant text.
  */
 
 var DEG_TO_RAD = Math.PI / 180;
@@ -15386,18 +15387,31 @@ var DEG_TO_RAD = Math.PI / 180;
 // Reusable vectors for calculations (avoid per-frame allocations)
 var _tempForward = new math_vector.Vector3();
 var _tempRight = new math_vector.Vector3();
-var _tempLightDir = new math_vector.Vector3();
+var _tempTargetDir = new math_vector.Vector3();
 var _tempQuat = new math_vector.Quaternion();
+
+// Smoothed direction state (persists across frames)
+// Initialized to a sensible default (down-forward)
+var _smoothedDir = new math_vector.Vector3(0, -0.7, 0.7);
+_smoothedDir.normalize();
+
+// Default smoothing factor (0-1, lower = smoother)
+var DEFAULT_SMOOTHING = 0.15;
 
 /**
  * Update light direction based on camera orientation and offset angles.
+ * Uses interpolation to smooth direction changes and prevent jitter.
+ *
  * @param {object} light - Babylon DirectionalLight
  * @param {object} camera - noa camera instance
  * @param {number} azimuth - Horizontal offset in degrees
  * @param {number} elevation - Vertical offset in degrees
+ * @param {number} [smoothing=0.15] - Smoothing factor (0-1). Lower = smoother. 1 = instant.
  */
-function updateLightDirection(light, camera, azimuth, elevation) {
+function updateLightDirection(light, camera, azimuth, elevation, smoothing) {
     if (!light || !camera) return
+
+    smoothing = smoothing !== undefined ? smoothing : DEFAULT_SMOOTHING;
 
     // Get camera forward direction (vec3 array)
     var camDir = camera.getDirection();
@@ -15410,23 +15424,28 @@ function updateLightDirection(light, camera, azimuth, elevation) {
     math_vector.Vector3.CrossToRef(math_vector.Vector3.Up(), _tempForward, _tempRight);
     _tempRight.normalize();
 
-    // Start with forward direction
-    _tempLightDir.copyFrom(_tempForward);
+    // Start with forward direction for target calculation
+    _tempTargetDir.copyFrom(_tempForward);
 
     // Rotate by azimuth around world Y axis
     if (azRad !== 0) {
         math_vector.Quaternion.RotationAxisToRef(math_vector.Vector3.Up(), azRad, _tempQuat);
-        _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
+        _tempTargetDir.rotateByQuaternionToRef(_tempQuat, _tempTargetDir);
     }
 
     // Rotate by elevation around camera's right axis
     if (elRad !== 0) {
         math_vector.Quaternion.RotationAxisToRef(_tempRight, elRad, _tempQuat);
-        _tempLightDir.rotateByQuaternionToRef(_tempQuat, _tempLightDir);
+        _tempTargetDir.rotateByQuaternionToRef(_tempQuat, _tempTargetDir);
     }
 
-    // Babylon directional lights expect direction of incoming light (camera headlamp = camera forward)
-    light.direction.copyFrom(_tempLightDir);
+    // Smooth the light direction by interpolating toward target
+    // This prevents jitter caused by rapid camera/position changes
+    math_vector.Vector3.LerpToRef(_smoothedDir, _tempTargetDir, smoothing, _smoothedDir);
+    _smoothedDir.normalize();
+
+    // Babylon directional lights expect direction of incoming light
+    light.direction.copyFrom(_smoothedDir);
 }
 
 /**
@@ -15503,8 +15522,8 @@ class TextLighting {
         this._customElevation = opts.customElevationDeg || -45;
         /** Light intensity */
         this._intensity = opts.intensity !== undefined ? opts.intensity : 1.0;
-        /** Distance beyond which text falls back to world lighting */
-        this._lodDistance = opts.lodDistance || 50;
+        /** Distance beyond which text falls back to world lighting (reduced to minimize jitter) */
+        this._lodDistance = opts.lodDistance || 30;
         /** Hysteresis buffer to prevent LOD flickering */
         this._lodHysteresis = opts.lodHysteresis || 5;
 
@@ -16770,6 +16789,57 @@ class Text {
             return
         }
         this._registerFont(name, fontData);
+    }
+
+
+    /**
+     * Load a built-in font by filename (without importing meshwriter-cudu directly).
+     * Returns a promise that resolves with the font data.
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * Bundlers (Vite, webpack) cannot resolve dynamic imports with variable paths.
+     * For browsers, use static imports instead:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * This method is only useful in Node.js environments (server-side rendering, tools).
+     *
+     * @param {string} fontFile - Built-in font filename (e.g., 'helvetica', 'atkinson-hyperlegible-next', 'jura')
+     * @returns {Promise<object>} Font data object
+     */
+    async loadFont(fontFile) {
+        try {
+            var fontModule = await import(`meshwriter-cudu/fonts/${fontFile}`);
+            return fontModule.default
+        } catch (e) {
+            warn('Failed to load font:', fontFile, e.message);
+            throw e
+        }
+    }
+
+
+    /**
+     * Load and register a built-in font in one step.
+     * Convenience method that combines loadFont() and registerFont().
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * See loadFont() documentation for details.
+     *
+     * For browsers, use static imports:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * @param {string} name - Name to register the font as
+     * @param {string} fontFile - Built-in font filename (e.g., 'atkinson-hyperlegible-next')
+     */
+    async loadAndRegisterFont(name, fontFile) {
+        var fontData = await this.loadFont(fontFile);
+        this.registerFont(name, fontData);
+        log('Font registered:', name, 'from', fontFile);
     }
 
 

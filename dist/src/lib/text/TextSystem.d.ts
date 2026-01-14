@@ -81,6 +81,41 @@ export class Text {
      */
     registerFont(name: string, fontData: object): void;
     /**
+     * Load a built-in font by filename (without importing meshwriter-cudu directly).
+     * Returns a promise that resolves with the font data.
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * Bundlers (Vite, webpack) cannot resolve dynamic imports with variable paths.
+     * For browsers, use static imports instead:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * This method is only useful in Node.js environments (server-side rendering, tools).
+     *
+     * @param {string} fontFile - Built-in font filename (e.g., 'helvetica', 'atkinson-hyperlegible-next', 'jura')
+     * @returns {Promise<object>} Font data object
+     */
+    loadFont(fontFile: string): Promise<object>;
+    /**
+     * Load and register a built-in font in one step.
+     * Convenience method that combines loadFont() and registerFont().
+     *
+     * **WARNING: This does NOT work in browser environments!**
+     * See loadFont() documentation for details.
+     *
+     * For browsers, use static imports:
+     * ```js
+     * import fontData from 'meshwriter-cudu/fonts/atkinson-hyperlegible-next'
+     * noa.text.registerFont('Atkinson', fontData)
+     * ```
+     *
+     * @param {string} name - Name to register the font as
+     * @param {string} fontFile - Built-in font filename (e.g., 'atkinson-hyperlegible-next')
+     */
+    loadAndRegisterFont(name: string, fontFile: string): Promise<void>;
+    /**
      * Create 3D text mesh at a world position.
      * Returns a TextHandle for manipulation and disposal.
      *

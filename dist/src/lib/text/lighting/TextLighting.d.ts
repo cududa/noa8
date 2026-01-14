@@ -27,7 +27,7 @@ export class TextLighting {
     _customElevation: any;
     /** Light intensity */
     _intensity: any;
-    /** Distance beyond which text falls back to world lighting */
+    /** Distance beyond which text falls back to world lighting (reduced to minimize jitter) */
     _lodDistance: any;
     /** Hysteresis buffer to prevent LOD flickering */
     _lodHysteresis: any;

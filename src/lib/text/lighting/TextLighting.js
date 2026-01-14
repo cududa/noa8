@@ -53,8 +53,8 @@ export class TextLighting {
         this._customElevation = opts.customElevationDeg || -45
         /** Light intensity */
         this._intensity = opts.intensity !== undefined ? opts.intensity : 1.0
-        /** Distance beyond which text falls back to world lighting */
-        this._lodDistance = opts.lodDistance || 50
+        /** Distance beyond which text falls back to world lighting (reduced to minimize jitter) */
+        this._lodDistance = opts.lodDistance || 30
         /** Hysteresis buffer to prevent LOD flickering */
         this._lodHysteresis = opts.lodHysteresis || 5
 
