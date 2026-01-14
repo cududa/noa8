@@ -41,13 +41,13 @@
 export class Rendering {
     /**
      * @internal
-     * @param {import('../index').Engine} noa
+     * @param {import('../../index.js').Engine} noa
      * @param {RenderingOptions} opts
      * @param {HTMLCanvasElement} canvas
     */
-    constructor(noa: import("../index").Engine, opts: RenderingOptions, canvas: HTMLCanvasElement);
+    constructor(noa: import("../../index.js").Engine, opts: RenderingOptions, canvas: HTMLCanvasElement);
     /** Primary noa engine handle */
-    /** @internal */ noa: import("../index").Engine;
+    /** @internal */ noa: import("../../index.js").Engine;
     /** Whether to redraw the screen when the game is resized while paused */
     renderOnResize: boolean;
     /** @internal */ useAO: boolean;
@@ -60,7 +60,7 @@ export class Rendering {
     /** @type {import('@babylonjs/core').DirectionalLight | null} */ light: import("@babylonjs/core").DirectionalLight | null;
     /** @type {import('@babylonjs/core').FreeCamera | null} */ camera: import("@babylonjs/core").FreeCamera | null;
     /** @internal legacy hook for highlight mesh (managed by RenderingUtils) */ _highlightMesh: any;
-    /** @type {import('./sceneOctreeManager').SceneOctreeManager | null} */ _octreeManager: import("./sceneOctreeManager").SceneOctreeManager | null;
+    /** @type {import('../sceneOctreeManager.js').SceneOctreeManager | null} */ _octreeManager: import("../sceneOctreeManager.js").SceneOctreeManager | null;
     /** @type {import('@babylonjs/core').TransformNode | null} */ _cameraHolder: import("@babylonjs/core").TransformNode | null;
     /** @type {import('@babylonjs/core').Mesh | null} */ _camScreen: import("@babylonjs/core").Mesh | null;
     /** @type {import('@babylonjs/core').StandardMaterial | null} */ _camScreenMat: import("@babylonjs/core").StandardMaterial | null;
@@ -153,9 +153,9 @@ export class Rendering {
      * @param {import('@babylonjs/core').AbstractMesh} mesh
      * @param {boolean} [isStatic]
      * @param {number[] | null} [pos]
-     * @param {import('./chunk').Chunk | null} [containingChunk]
+     * @param {import('../chunk').Chunk | null} [containingChunk]
      */
-    addMeshToScene(mesh: import("@babylonjs/core").AbstractMesh, isStatic?: boolean, pos?: number[] | null, containingChunk?: import("./chunk").Chunk | null): void;
+    addMeshToScene(mesh: import("@babylonjs/core").AbstractMesh, isStatic?: boolean, pos?: number[] | null, containingChunk?: import("../chunk").Chunk | null): void;
     /**
      * Remove a mesh from noa's scene management without disposing it.
      * Mesh can be re-added later with addMeshToScene.
@@ -209,23 +209,23 @@ export class Rendering {
     /**
      * Load a GLB/glTF model and register its meshes with noa.
      * @param {string} url
-     * @param {import('./renderingModels').LoadModelOptions} [options]
+     * @param {import('./renderingModels.js').LoadModelOptions} [options]
      */
-    loadModel(url: string, options?: import("./renderingModels").LoadModelOptions): Promise<import("./renderingModels").LoadedModel>;
+    loadModel(url: string, options?: import("./renderingModels.js").LoadModelOptions): Promise<import("./renderingModels.js").LoadedModel>;
     /** Convert world coordinates to local (rendering) coordinates */
     worldToLocal(x: any, y: any, z: any): number[];
     /** Cached world-to-local conversion for hot paths */
-    worldToLocalCached(x: any, y: any, z: any, out: any): any;
+    worldToLocalCached(x: any, y: any, z: any, out: any): number[];
     /** Convert local (rendering) coordinates to world coordinates */
     localToWorld(x: any, y: any, z: any): any[];
     /** Cached local-to-world conversion for hot paths */
-    localToWorldCached(x: any, y: any, z: any, out: any): any;
+    localToWorldCached(x: any, y: any, z: any, out: any): number[];
     /** Set a mesh position using world coordinates */
     setMeshWorldPosition(mesh: any, x: any, y: any, z: any): void;
     /** Get a mesh's world position */
     getMeshWorldPosition(mesh: any): any[];
     /** Cached variant of getMeshWorldPosition */
-    getMeshWorldPositionCached(mesh: any, out: any): any;
+    getMeshWorldPositionCached(mesh: any, out: any): number[];
     /** Copy of current world origin offset */
     getWorldOriginOffset(): number[];
     /** Cached world origin offset */
@@ -262,11 +262,11 @@ export type RenderingOptions = {
     octreeBlockSize?: number;
     renderOnResize?: boolean;
 };
-import { RenderingCore } from './renderingCore';
-import { RenderingLighting } from './renderingLighting';
-import { RenderingMeshes } from './renderingMeshes';
-import { RenderingMaterials } from './renderingMaterials';
-import { RenderingModels } from './renderingModels';
-import { RenderingCoords } from './renderingCoords';
-import { RenderingUtils } from './renderingUtils';
-import { RenderingCamera } from './renderingCamera';
+import { RenderingCore } from './renderingCore.js';
+import { RenderingLighting } from './renderingLighting.js';
+import { RenderingMeshes } from './renderingMeshes.js';
+import { RenderingMaterials } from './renderingMaterials.js';
+import { RenderingModels } from './renderingModels.js';
+import { RenderingCoords } from './renderingCoords.js';
+import { RenderingUtils } from './renderingUtils.js';
+import { RenderingCamera } from './renderingCamera.js';
