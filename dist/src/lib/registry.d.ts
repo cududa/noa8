@@ -61,20 +61,20 @@ export class Registry {
     /**
      * Get block property object passed in at registration.
      * @param {number} id
-     * @returns {object}
+     * @returns {object|null|undefined}
      */
-    getBlockProps: (id: number) => object;
+    getBlockProps: (id: number) => object | null | undefined;
     /**
      * Look up a block ID's face material.
      * @param {number} blockId
-     * @param {number} dir - Face direction 0..5: [-x, +x, -y, +y, -z, +z]
+     * @param {number} dir - Face direction 0..5: [+x, -x, +y, -y, +z, -z]
      * @returns {number} Material ID
      */
     getBlockFaceMaterial: (blockId: number, dir: number) => number;
     /**
      * General lookup for all properties of a block material
      * @param {number} matID
-     * @returns {MatDef}
+     * @returns {MatDef|undefined}
      */
     getMaterialData: (matID: number) => {
         color: number[];
@@ -86,7 +86,7 @@ export class Registry {
         flowSpeed: number;
         flowDirection: number[];
         flowPatternLength: number;
-    };
+    } | undefined;
     /**
      * Given a texture URL, check if any material using that texture needs alpha.
      * @internal
@@ -136,7 +136,7 @@ declare class BlockOptions {
      *   - one (String) material name
      *   - array of 2 names: [top/bottom, sides]
      *   - array of 3 names: [top, bottom, sides]
-     *   - array of 6 names: [-x, +x, -y, +y, -z, +z]
+     *   - array of 6 names: [+x, -x, +y, -y, +z, -z]
      * @type {string|string[]|null}
      */
     material: string | string[] | null;

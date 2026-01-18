@@ -20,33 +20,35 @@ export default function (noa) {
         onRemove: null,
 
         system: function fadeOnZoomProc(dt, states) {
-            var zoom = noa.camera.currentZoom
+            // Use minimum to hide immediately when switching to first-person
+            var zoomMetric = Math.min(noa.camera.currentZoom, noa.camera.zoomDistance)
             for (var i = 0; i < states.length; i++) {
-                checkZoom(states[i], zoom, noa)
+                checkZoom(states[i], zoomMetric, noa)
             }
         }
     }
 }
 
 
-function checkZoom(state, zoom, noa) {
+function checkZoom(state, zoomMetric, noa) {
     if (!noa.ents.hasMesh(state.__id)) return
     var mesh = noa.ents.getMeshData(state.__id).mesh
     if (!mesh) return
 
-    // Use the minimum of currentZoom and the target zoomDistance so we hide immediately
-    // when switching to first-person, even before the lerp finishes.
-    var zoomMetric = Math.min(noa.camera.currentZoom, noa.camera.zoomDistance)
     var shouldHide = (zoomMetric < state.cutoff)
     var visible = !shouldHide
 
-    // Hide/show the entire hierarchy so character children also disappear
-    // Important for rigged models where the root is a transform node.
-    var targets = []
-    if (mesh.getChildMeshes) {
-        targets = mesh.getChildMeshes(false) // false = all descendants (recursive)
+    // Cache targets per entity to avoid per-frame allocations.
+    var targets = state._fadeTargets
+    if (!targets || state._fadeTargetsMesh !== mesh) {
+        targets = []
+        if (mesh.getChildMeshes) {
+            targets = mesh.getChildMeshes(false) // false = all descendants (recursive)
+        }
+        targets.push(mesh)
+        state._fadeTargets = targets
+        state._fadeTargetsMesh = mesh
     }
-    targets.push(mesh)
 
     var ADDED_FLAG = 'noa_added_to_scene'
     for (var i = 0; i < targets.length; i++) {
