@@ -3,6 +3,22 @@ import { Vector3, Octree, OctreeBlock, OctreeSceneComponent } from './babylonExp
 
 import { locationHasher, removeUnorderedListItem } from './util'
 
+/**
+ * Internal representation of OctreeBlock for rebase operations.
+ * Includes private Babylon.js properties we need to access.
+ * We cast to this type when accessing Babylon internals.
+ * @typedef {object} OctreeBlockInternal
+ * @property {Vector3} minPoint
+ * @property {Vector3} maxPoint
+ * @property {Vector3[]} _boundingVectors - Private Babylon.js property
+ * @property {OctreeBlockInternal[]} [blocks] - Child blocks (optional)
+ */
+
+/**
+ * Parent node in octree hierarchy (Octree or OctreeBlock with children)
+ * @typedef {object} OctreeParent
+ * @property {OctreeBlockInternal[]} blocks
+ */
 
 /*
  * 
@@ -40,7 +56,8 @@ export class SceneOctreeManager {
          * 
         */
 
-        this.rebase = (offset) => { recurseRebaseBlocks(octree, offset) }
+        /** @param {Vector3} offset */
+        this.rebase = (offset) => { recurseRebaseBlocks(/** @type {OctreeParent} */ (/** @type {unknown} */ (octree)), offset) }
 
         this.addMesh = (mesh, isStatic, pos, chunk) => {
             if (!mesh.metadata) mesh.metadata = {}
@@ -131,6 +148,8 @@ export class SceneOctreeManager {
                 }
                 mesh.metadata[inDynamicList] = visible
             }
+            // Actually hide/show the mesh in Babylon.js
+            mesh.isVisible = visible
         }
 
         /*
@@ -142,15 +161,23 @@ export class SceneOctreeManager {
         var NOP = () => { }
         var bs = blockSize * rendering.noa.world._chunkSize
 
+        /**
+         * @param {OctreeParent} parent
+         * @param {Vector3} offset
+         */
         var recurseRebaseBlocks = (parent, offset) => {
-            parent.blocks.forEach(child => {
+            parent.blocks.forEach((child) => {
                 child.minPoint.subtractInPlace(offset)
                 child.maxPoint.subtractInPlace(offset)
-                child._boundingVectors.forEach(v => v.subtractInPlace(offset))
-                if (child.blocks) recurseRebaseBlocks(child, offset)
+                child._boundingVectors.forEach((v) => v.subtractInPlace(offset))
+                if (child.blocks) recurseRebaseBlocks(/** @type {OctreeParent} */ (child), offset)
             })
         }
 
+        /**
+         * @param {number[]} minPt
+         * @param {number} size
+         */
         var makeOctreeBlock = (minPt, size) => {
             var min = new Vector3(minPt[0], minPt[1], minPt[2])
             var max = new Vector3(minPt[0] + size, minPt[1] + size, minPt[2] + size)

@@ -1,13 +1,16 @@
+/**
+ * Registry module - block and material registration.
+ * @module registry
+ */
 
 
+/** @type {{texturePath: string}} */
 var defaults = {
     texturePath: ''
 }
 
-// voxel ID now uses the whole Uint16Array element
+/** Maximum block ID (uses full Uint16Array element). */
 var MAX_BLOCK_ID = (1 << 16) - 1
-
-
 
 
 
@@ -79,13 +82,7 @@ export class Registry {
         var matDefs = []
 
 
-        /* 
-         * 
-         *      Block registration methods
-         * 
-        */
-
-
+        // ============ BLOCK REGISTRATION ============
 
         /**
          * Register (by integer ID) a block type and its parameters.
@@ -134,7 +131,7 @@ export class Registry {
                 // interpret as [top, bottom, sides]
                 mats = [mat[2], mat[2], mat[0], mat[1], mat[2], mat[2]]
             } else if (mat.length && mat.length == 6) {
-                // interpret as [-x, +x, -y, +y, -z, +z]
+                // interpret as [+x, -x, +y, -y, +z, -z]
                 mats = mat
             } else throw 'Invalid material parameter: ' + mat
 
@@ -210,46 +207,51 @@ export class Registry {
         }
 
 
+        // ============ BLOCK ACCESSORS ============
 
-        /*
-         *      quick accessors for querying block ID stuff
-         */
-
-        /** 
-         * block solidity (as in physics) 
-         * @param id
+        /**
+         * Block solidity (for physics purposes).
+         * @param {number} id
+         * @returns {boolean}
          */
         this.getBlockSolidity = function (id) {
             return blockSolidity[id]
         }
 
         /**
-         * block opacity - whether it obscures the whole voxel (dirt) or 
-         * can be partially seen through (like a fencepost, etc)
-         * @param id
+         * Block opacity - whether it fully obscures the voxel (like dirt)
+         * or can be partially seen through (like a fencepost).
+         * @param {number} id
+         * @returns {boolean}
          */
         this.getBlockOpacity = function (id) {
             return blockOpacity[id]
         }
 
-        /** 
-         * block is fluid or not
-         * @param id
+        /**
+         * Whether the block is a fluid.
+         * @param {number} id
+         * @returns {boolean}
          */
         this.getBlockFluidity = function (id) {
             return blockIsFluid[id]
         }
 
-        /** 
-         * Get block property object passed in at registration
-         * @param id
+        /**
+         * Get block property object passed in at registration.
+         * @param {number} id
+         * @returns {object|null|undefined}
          */
         this.getBlockProps = function (id) {
             return blockProps[id]
         }
 
-        // look up a block ID's face material
-        // dir is a value 0..5: [ +x, -x, +y, -y, +z, -z ]
+        /**
+         * Look up a block ID's face material.
+         * @param {number} blockId
+         * @param {number} dir - Face direction 0..5: [+x, -x, +y, -y, +z, -z]
+         * @returns {number} Material ID
+         */
         this.getBlockFaceMaterial = function (blockId, dir) {
             return blockMats[blockId * 6 + dir]
         }
@@ -258,7 +260,7 @@ export class Registry {
         /**
          * General lookup for all properties of a block material
          * @param {number} matID 
-         * @returns {MatDef}
+         * @returns {MatDef|undefined}
          */
         this.getMaterialData = function (matID) {
             return matDefs[matID]
@@ -266,9 +268,9 @@ export class Registry {
 
 
         /**
-         * Given a texture URL, does any material using that 
-         * texture need alpha?
+         * Given a texture URL, check if any material using that texture needs alpha.
          * @internal
+         * @param {string} tex
          * @returns {boolean}
          */
         this._textureNeedsAlpha = function (tex = '') {
@@ -279,17 +281,7 @@ export class Registry {
         }
 
 
-
-
-
-        /*
-         * 
-         *   Meant for internal use within the engine
-         * 
-         */
-
-
-        // internal access to lookup arrays
+        // ============ INTERNAL LOOKUP ARRAYS ============
         /** @internal */
         this._solidityLookup = blockSolidity
         /** @internal */
@@ -310,15 +302,9 @@ export class Registry {
         this._matAtlasIndexLookup = matAtlasIndexLookup
 
 
-
-        /*
-         * 
-         *      default initialization
-         * 
-         */
-
-        // add a default material and set ID=1 to it
-        // this is safe since registering new block data overwrites the old
+        // ============ DEFAULT INITIALIZATION ============
+        // Add a default material and block ID=1. Safe since registering
+        // new block data overwrites the old.
         this.registerMaterial('dirt', { color: [0.4, 0.3, 0] })
         this.registerBlock(1, { material: 'dirt' })
 
@@ -326,16 +312,18 @@ export class Registry {
 
 }
 
-/*
- * 
- *          helpers
- * 
-*/
 
+// ============ HELPERS ============
 
-
-// look up material ID given its name
-// if lazy is set, pre-register the name and return an ID
+/**
+ * Look up material ID given its name.
+ * If lazyInit is set, pre-register the name and return an ID.
+ * @param {Registry} reg
+ * @param {Object.<string, number>} matIDs
+ * @param {string} name
+ * @param {boolean} lazyInit
+ * @returns {number}
+ */
 function getMaterialId(reg, matIDs, name, lazyInit) {
     if (!name) return 0
     var id = matIDs[name]
@@ -345,95 +333,154 @@ function getMaterialId(reg, matIDs, name, lazyInit) {
 
 
 
-// data class for holding block callback references
-function BlockCallbackHolder(opts) {
-    this.onLoad = opts.onLoad || null
-    this.onUnload = opts.onUnload || null
-    this.onSet = opts.onSet || null
-    this.onUnset = opts.onUnset || null
-    this.onCustomMeshCreate = opts.onCustomMeshCreate || null
+/**
+ * Data class for holding block callback references.
+ * @internal
+ */
+class BlockCallbackHolder {
+    /**
+     * @param {BlockOptions} opts
+     */
+    constructor(opts) {
+        /** @type {((x:number, y:number, z:number) => void)|null} */
+        this.onLoad = opts.onLoad || null
+        /** @type {((x:number, y:number, z:number) => void)|null} */
+        this.onUnload = opts.onUnload || null
+        /** @type {((x:number, y:number, z:number) => void)|null} */
+        this.onSet = opts.onSet || null
+        /** @type {((x:number, y:number, z:number) => void)|null} */
+        this.onUnset = opts.onUnset || null
+        /** @type {((mesh:TransformNode, x:number, y:number, z:number) => void)|null} */
+        this.onCustomMeshCreate = opts.onCustomMeshCreate || null
+    }
 }
 
 
 
 
 /**
- * Default options when registering a block type
+ * Default options when registering a block type.
  */
-function BlockOptions(isFluid = false) {
-    /** Solidity for physics purposes */
-    this.solid = (isFluid) ? false : true
-    /** Whether the block fully obscures neighboring blocks */
-    this.opaque = (isFluid) ? false : true
-    /** whether a nonsolid block is a fluid (buoyant, viscous..) */
-    this.fluid = false
-    /** The block material(s) for this voxel's faces. May be:
-     *   * one (String) material name
-     *   * array of 2 names: [top/bottom, sides]
-     *   * array of 3 names: [top, bottom, sides]
-     *   * array of 6 names: [-x, +x, -y, +y, -z, +z]
-     * @type {string|string[]}
-    */
-    this.material = null
-    /** Specifies a custom mesh for this voxel, instead of terrain  */
-    this.blockMesh = null
-    /** Fluid parameter for fluid blocks */
-    this.fluidDensity = 1.0
-    /** Fluid parameter for fluid blocks */
-    this.viscosity = 0.5
-    /** @type {(x:number, y:number, z:number) => void} */
-    this.onLoad = null
-    /** @type {(x:number, y:number, z:number) => void} */
-    this.onUnload = null
-    /** @type {(x:number, y:number, z:number) => void} */
-    this.onSet = null
-    /** @type {(x:number, y:number, z:number) => void} */
-    this.onUnset = null
-    /** @type {(mesh:TransformNode, x:number, y:number, z:number) => void} */
-    this.onCustomMeshCreate = null
+class BlockOptions {
+    /**
+     * @param {boolean} [isFluid=false]
+     */
+    constructor(isFluid = false) {
+        /** Solidity for physics purposes.
+         * @type {boolean} */
+        this.solid = (isFluid) ? false : true
+
+        /** Whether the block fully obscures neighboring blocks.
+         * @type {boolean} */
+        this.opaque = (isFluid) ? false : true
+
+        /** Whether a nonsolid block is a fluid (buoyant, viscous..).
+         * @type {boolean} */
+        this.fluid = false
+
+        /**
+         * The block material(s) for this voxel's faces. May be:
+         *   - one (String) material name
+         *   - array of 2 names: [top/bottom, sides]
+         *   - array of 3 names: [top, bottom, sides]
+         *   - array of 6 names: [+x, -x, +y, -y, +z, -z]
+         * @type {string|string[]|null}
+         */
+        this.material = null
+
+        /** Specifies a custom mesh for this voxel, instead of terrain.
+         * @type {*} */
+        this.blockMesh = null
+
+        /** Fluid density parameter for fluid blocks.
+         * @type {number} */
+        this.fluidDensity = 1.0
+
+        /** Viscosity parameter for fluid blocks.
+         * @type {number} */
+        this.viscosity = 0.5
+
+        /** Callback when block's chunk is loaded.
+         * @type {((x:number, y:number, z:number) => void)|null} */
+        this.onLoad = null
+
+        /** Callback when block's chunk is unloaded.
+         * @type {((x:number, y:number, z:number) => void)|null} */
+        this.onUnload = null
+
+        /** Callback when block is set/placed.
+         * @type {((x:number, y:number, z:number) => void)|null} */
+        this.onSet = null
+
+        /** Callback when block is unset/removed.
+         * @type {((x:number, y:number, z:number) => void)|null} */
+        this.onUnset = null
+
+        /** Callback when custom mesh is created for this block.
+         * @type {((mesh:TransformNode, x:number, y:number, z:number) => void)|null} */
+        this.onCustomMeshCreate = null
+    }
 }
 
 /** @typedef {import('@babylonjs/core').TransformNode} TransformNode */
 
 
 /**
- * Default options when registering a Block Material
+ * Default options when registering a block material.
  */
-function MaterialOptions() {
-    /** An array of 0..1 floats, either [R,G,B] or [R,G,B,A]
-     * @type {number[]}
-     */
-    this.color = null
-    /** Filename of texture image, if any
-     * @type {string}
-     */
-    this.textureURL = null
-    /** Whether the texture image has alpha */
-    this.texHasAlpha = false
-    /** Index into a (vertical strip) texture atlas, if applicable */
-    this.atlasIndex = -1
-    /**
-     * An optional Babylon.js `Material`. If specified, terrain for this voxel
-     * will be rendered with the supplied material (this can impact performance).
-     */
-    this.renderMaterial = null
-    /**
-     * Flow/conveyor animation speed in blocks per second. If > 0, the material
-     * will animate smoothly. Default is 0 (no animation).
-     * @type {number}
-     */
-    this.flowSpeed = 0
-    /**
-     * Flow/conveyor animation direction as [x, y, z]. Only used if flowSpeed > 0.
-     * Example: [1, 0, 0] flows in +X direction, [0, 0, -1] flows in -Z direction.
-     * @type {number[]}
-     */
-    this.flowDirection = [1, 0, 0]
-    /**
-     * Pattern length in blocks for repeating flow animations. The vertex offset
-     * will wrap every N blocks. Default is 10. Set this to match your prebaked
-     * texture/block pattern length for seamless wrapping.
-     * @type {number}
-     */
-    this.flowPatternLength = 10
+class MaterialOptions {
+    constructor() {
+        /**
+         * An array of 0..1 floats, either [R,G,B] or [R,G,B,A].
+         * @type {number[]|null}
+         */
+        this.color = null
+
+        /**
+         * Filename of texture image, if any.
+         * @type {string|null}
+         */
+        this.textureURL = null
+
+        /**
+         * Whether the texture image has alpha.
+         * @type {boolean}
+         */
+        this.texHasAlpha = false
+
+        /**
+         * Index into a (vertical strip) texture atlas, if applicable.
+         * @type {number}
+         */
+        this.atlasIndex = -1
+
+        /**
+         * An optional Babylon.js `Material`. If specified, terrain for this voxel
+         * will be rendered with the supplied material (this can impact performance).
+         * @type {*}
+         */
+        this.renderMaterial = null
+
+        /**
+         * Flow/conveyor animation speed in blocks per second.
+         * If > 0, the material will animate smoothly. Default is 0 (no animation).
+         * @type {number}
+         */
+        this.flowSpeed = 0
+
+        /**
+         * Flow/conveyor animation direction as [x, y, z]. Only used if flowSpeed > 0.
+         * Example: [1, 0, 0] flows in +X direction, [0, 0, -1] flows in -Z direction.
+         * @type {number[]}
+         */
+        this.flowDirection = [1, 0, 0]
+
+        /**
+         * Pattern length in blocks for repeating flow animations.
+         * The vertex offset will wrap every N blocks. Default is 10.
+         * Set this to match your prebaked texture/block pattern length for seamless wrapping.
+         * @type {number}
+         */
+        this.flowPatternLength = 10
+    }
 }

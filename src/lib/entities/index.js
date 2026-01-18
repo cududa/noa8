@@ -483,6 +483,20 @@ export class Entities extends ECS {
         }
         ids.forEach(id => this.deleteEntity(id))
 
+        // Run deferred cleanup synchronously so pending timers don't touch disposed stores
+        try {
+            this.tick(0)
+            this.render(0)
+        } catch (err) { /* ignore cleanup errors during disposal */ }
+
+        // Flush any remaining pending removals before disposing stores
+        if (this._storage) {
+            Object.keys(this._storage).forEach(compName => {
+                var store = this._storage[compName]
+                if (store && typeof store.flush === 'function') store.flush()
+            })
+        }
+
         // Dispose component stores
         if (this._storage) {
             Object.keys(this._storage).forEach(compName => {

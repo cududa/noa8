@@ -155,7 +155,7 @@ export class Engine extends EventEmitter {
         normal: number[];
     };
     /** @internal */
-    _pickTestFunction: (id: any) => boolean;
+    _pickTestFunction: (id: number) => boolean;
     /** @internal */
     _pickTestVoxel: (x: any, y: any, z: any) => boolean;
     _cleanupDebugGlobals: () => void;
