@@ -46,15 +46,15 @@ export class TextLighting {
         /** Whether camera-relative lighting is enabled */
         this._enabled = opts.enabled !== false
         /** Current preset name */
-        this._preset = opts.preset || 'above-front'
+        this._preset = opts.preset || 'custom'
         /** Custom azimuth offset (degrees) - used when preset is 'custom' */
         this._customAzimuth = opts.customAzimuthDeg || 0
         /** Custom elevation offset (degrees) - used when preset is 'custom' */
-        this._customElevation = opts.customElevationDeg || -45
+        this._customElevation = opts.customElevationDeg !== undefined ? opts.customElevationDeg : -84
         /** Light intensity */
-        this._intensity = opts.intensity !== undefined ? opts.intensity : 1.0
-        /** Distance beyond which text falls back to world lighting (reduced to minimize jitter) */
-        this._lodDistance = opts.lodDistance || 30
+        this._intensity = opts.intensity !== undefined ? opts.intensity : 0.8
+        /** Distance beyond which text falls back to world lighting */
+        this._lodDistance = opts.lodDistance || 50
         /** Hysteresis buffer to prevent LOD flickering */
         this._lodHysteresis = opts.lodHysteresis || 5
 

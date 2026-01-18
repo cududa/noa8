@@ -6757,33 +6757,35 @@ function fadeOnZoomComp (noa) {
         onRemove: null,
 
         system: function fadeOnZoomProc(dt, states) {
-            var zoom = noa.camera.currentZoom;
+            // Use minimum to hide immediately when switching to first-person
+            var zoomMetric = Math.min(noa.camera.currentZoom, noa.camera.zoomDistance);
             for (var i = 0; i < states.length; i++) {
-                checkZoom(states[i], zoom, noa);
+                checkZoom(states[i], zoomMetric, noa);
             }
         }
     }
 }
 
 
-function checkZoom(state, zoom, noa) {
+function checkZoom(state, zoomMetric, noa) {
     if (!noa.ents.hasMesh(state.__id)) return
     var mesh = noa.ents.getMeshData(state.__id).mesh;
     if (!mesh) return
 
-    // Use the minimum of currentZoom and the target zoomDistance so we hide immediately
-    // when switching to first-person, even before the lerp finishes.
-    var zoomMetric = Math.min(noa.camera.currentZoom, noa.camera.zoomDistance);
     var shouldHide = (zoomMetric < state.cutoff);
     var visible = !shouldHide;
 
-    // Hide/show the entire hierarchy so character children also disappear
-    // Important for rigged models where the root is a transform node.
-    var targets = [];
-    if (mesh.getChildMeshes) {
-        targets = mesh.getChildMeshes(false); // false = all descendants (recursive)
+    // Cache targets per entity to avoid per-frame allocations.
+    var targets = state._fadeTargets;
+    if (!targets || state._fadeTargetsMesh !== mesh) {
+        targets = [];
+        if (mesh.getChildMeshes) {
+            targets = mesh.getChildMeshes(false); // false = all descendants (recursive)
+        }
+        targets.push(mesh);
+        state._fadeTargets = targets;
+        state._fadeTargetsMesh = mesh;
     }
-    targets.push(mesh);
 
     var ADDED_FLAG = 'noa_added_to_scene';
     for (var i = 0; i < targets.length; i++) {
@@ -10783,7 +10785,7 @@ class Registry {
                 // interpret as [top, bottom, sides]
                 mats = [mat[2], mat[2], mat[0], mat[1], mat[2], mat[2]];
             } else if (mat.length && mat.length == 6) {
-                // interpret as [-x, +x, -y, +y, -z, +z]
+                // interpret as [+x, -x, +y, -y, +z, -z]
                 mats = mat;
             } else throw 'Invalid material parameter: ' + mat
 
@@ -10892,7 +10894,7 @@ class Registry {
         /**
          * Get block property object passed in at registration.
          * @param {number} id
-         * @returns {object}
+         * @returns {object|null|undefined}
          */
         this.getBlockProps = function (id) {
             return blockProps[id]
@@ -10901,7 +10903,7 @@ class Registry {
         /**
          * Look up a block ID's face material.
          * @param {number} blockId
-         * @param {number} dir - Face direction 0..5: [-x, +x, -y, +y, -z, +z]
+         * @param {number} dir - Face direction 0..5: [+x, -x, +y, -y, +z, -z]
          * @returns {number} Material ID
          */
         this.getBlockFaceMaterial = function (blockId, dir) {
@@ -10912,7 +10914,7 @@ class Registry {
         /**
          * General lookup for all properties of a block material
          * @param {number} matID 
-         * @returns {MatDef}
+         * @returns {MatDef|undefined}
          */
         this.getMaterialData = function (matID) {
             return matDefs[matID]
@@ -11035,7 +11037,7 @@ class BlockOptions {
          *   - one (String) material name
          *   - array of 2 names: [top/bottom, sides]
          *   - array of 3 names: [top, bottom, sides]
-         *   - array of 6 names: [-x, +x, -y, +y, -z, +z]
+         *   - array of 6 names: [+x, -x, +y, -y, +z, -z]
          * @type {string|string[]|null}
          */
         this.material = null;
@@ -16772,15 +16774,15 @@ class TextLighting {
         /** Whether camera-relative lighting is enabled */
         this._enabled = opts.enabled !== false;
         /** Current preset name */
-        this._preset = opts.preset || 'above-front';
+        this._preset = opts.preset || 'custom';
         /** Custom azimuth offset (degrees) - used when preset is 'custom' */
         this._customAzimuth = opts.customAzimuthDeg || 0;
         /** Custom elevation offset (degrees) - used when preset is 'custom' */
-        this._customElevation = opts.customElevationDeg || -45;
+        this._customElevation = opts.customElevationDeg !== undefined ? opts.customElevationDeg : -84;
         /** Light intensity */
-        this._intensity = opts.intensity !== undefined ? opts.intensity : 1.0;
-        /** Distance beyond which text falls back to world lighting (reduced to minimize jitter) */
-        this._lodDistance = opts.lodDistance || 30;
+        this._intensity = opts.intensity !== undefined ? opts.intensity : 0.8;
+        /** Distance beyond which text falls back to world lighting */
+        this._lodDistance = opts.lodDistance || 50;
         /** Hysteresis buffer to prevent LOD flickering */
         this._lodHysteresis = opts.lodHysteresis || 5;
 
