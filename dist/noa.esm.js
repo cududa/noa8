@@ -17345,6 +17345,7 @@ var CONSTRUCTOR_DEFAULTS = {
 function createDefaultOptions(constructorOpts) {
     return {
         font: constructorOpts.defaultFont,
+        fontWeight: null,  // null = no weight suffix, number = append to font name (e.g., 'Atkinson-500')
         scale: constructorOpts.scale,
         letterHeight: 1,
         letterThickness: 0.1,
@@ -17748,11 +17749,18 @@ function createWorldText(params) {
     if (processedColors.ambient) colors.ambient = processedColors.ambient;
     if (opts.specularColor) colors.specular = opts.specularColor;
 
+    // Resolve font name with weight suffix if fontWeight is provided
+    // e.g., font='Atkinson', fontWeight=500 -> 'Atkinson-500'
+    var resolvedFont = opts.font;
+    if (opts.fontWeight != null) {
+        resolvedFont = opts.font + '-' + opts.fontWeight;
+    }
+
     // Create meshwriter text instance
     // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
     // The rim material gets configured separately by configureMaterial() below.
     var writerOpts = {
-        'font-family': opts.font,
+        'font-family': resolvedFont,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
         'color': opts.color,
@@ -18331,6 +18339,7 @@ class Text {
  * @typedef {object} TextOptions
  * @property {number[]} [position] - World position [x, y, z]
  * @property {string} [font] - Font family name (default: 'Helvetica')
+ * @property {number} [fontWeight] - Font weight (appended to font name, e.g., font='Atkinson', fontWeight=500 -> 'Atkinson-500')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
  * @property {number} [letterSpacing] - Extra space between letters in world units (added after kerning, default: 0)

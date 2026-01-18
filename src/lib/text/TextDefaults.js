@@ -17,6 +17,7 @@ export var CONSTRUCTOR_DEFAULTS = {
 export function createDefaultOptions(constructorOpts) {
     return {
         font: constructorOpts.defaultFont,
+        fontWeight: null,  // null = no weight suffix, number = append to font name (e.g., 'Atkinson-500')
         scale: constructorOpts.scale,
         letterHeight: 1,
         letterThickness: 0.1,

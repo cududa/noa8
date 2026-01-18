@@ -192,6 +192,10 @@ export type TextOptions = {
      */
     font?: string;
     /**
+     * - Font weight (appended to font name, e.g., font='Atkinson', fontWeight=500 -> 'Atkinson-500')
+     */
+    fontWeight?: number;
+    /**
      * - Height of letters in world units (default: 1)
      */
     letterHeight?: number;

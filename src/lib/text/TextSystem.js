@@ -435,6 +435,7 @@ export class Text {
  * @typedef {object} TextOptions
  * @property {number[]} [position] - World position [x, y, z]
  * @property {string} [font] - Font family name (default: 'Helvetica')
+ * @property {number} [fontWeight] - Font weight (appended to font name, e.g., font='Atkinson', fontWeight=500 -> 'Atkinson-500')
  * @property {number} [letterHeight] - Height of letters in world units (default: 1)
  * @property {number} [letterThickness] - Depth of letters (default: 0.1)
  * @property {number} [letterSpacing] - Extra space between letters in world units (added after kerning, default: 0)

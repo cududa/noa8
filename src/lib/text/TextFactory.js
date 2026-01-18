@@ -36,11 +36,18 @@ export function createWorldText(params) {
     if (processedColors.ambient) colors.ambient = processedColors.ambient
     if (opts.specularColor) colors.specular = opts.specularColor
 
+    // Resolve font name with weight suffix if fontWeight is provided
+    // e.g., font='Atkinson', fontWeight=500 -> 'Atkinson-500'
+    var resolvedFont = opts.font
+    if (opts.fontWeight != null) {
+        resolvedFont = opts.font + '-' + opts.fontWeight
+    }
+
     // Create meshwriter text instance
     // Use original color (opts.color) for MeshWriter - the face mesh needs the bright color.
     // The rim material gets configured separately by configureMaterial() below.
     var writerOpts = {
-        'font-family': opts.font,
+        'font-family': resolvedFont,
         'letter-height': opts.letterHeight,
         'letter-thickness': opts.letterThickness,
         'color': opts.color,
