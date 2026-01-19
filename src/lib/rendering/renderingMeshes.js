@@ -47,6 +47,19 @@ export class RenderingMeshes {
             }
         }
 
+        // Babylon 8 defaults useVertexColors=true even when no color buffer exists.
+        // Sync useVertexColors with actual vertex color data to avoid white faces.
+        var hasVertexColors = false
+        if (mesh.isVerticesDataPresent) {
+            try { hasVertexColors = mesh.isVerticesDataPresent('color') } catch (e) { }
+        }
+        if (!hasVertexColors && mesh.geometry && mesh.geometry.isVerticesDataPresent) {
+            try { hasVertexColors = mesh.geometry.isVerticesDataPresent('color') } catch (e) { }
+        }
+        if (mesh.useVertexColors !== hasVertexColors) {
+            mesh.useVertexColors = hasVertexColors
+        }
+
         // Already registered? just make sure it's visible and bail
         if (mesh.metadata[addedToSceneFlag]) {
             rendering._octreeManager.setMeshVisibility(mesh, true)

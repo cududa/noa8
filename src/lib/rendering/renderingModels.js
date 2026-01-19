@@ -41,6 +41,7 @@ export class RenderingModels {
         var rendering = this.rendering
         var scene = rendering.scene
         var registerMeshes = options.registerMeshes !== false
+
         /** @type {import('@babylonjs/core').AbstractMesh[]} */
         var meshes = []
         /** @type {import('@babylonjs/core').Skeleton[]} */
@@ -84,6 +85,9 @@ export class RenderingModels {
             }
         }
 
+        // Capture lights before import to detect new ones
+        var lightsBefore = new Set(scene.lights)
+
         try {
             // Load the model; Babylon returns a bundle of meshes/skeletons/animation groups
             var result = await SceneLoader.ImportMeshAsync('', '', url, scene)
@@ -91,6 +95,11 @@ export class RenderingModels {
             meshes = result.meshes || []
             skeletons = result.skeletons || []
             animationGroups = result.animationGroups || []
+
+            // Dispose any lights that came with the model
+            // GLB files can include lights nested under TransformNodes that don't appear in result.lights
+            var lightsToDispose = scene.lights.filter(l => !lightsBefore.has(l))
+            lightsToDispose.forEach(l => { try { l.dispose() } catch (e) { } })
 
             if (meshes.length === 0) {
                 throw new Error('No meshes found in model: ' + url)

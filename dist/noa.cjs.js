@@ -11620,6 +11620,19 @@ class RenderingMeshes {
             }
         }
 
+        // Babylon 8 defaults useVertexColors=true even when no color buffer exists.
+        // Sync useVertexColors with actual vertex color data to avoid white faces.
+        var hasVertexColors = false;
+        if (mesh.isVerticesDataPresent) {
+            try { hasVertexColors = mesh.isVerticesDataPresent('color'); } catch (e) { }
+        }
+        if (!hasVertexColors && mesh.geometry && mesh.geometry.isVerticesDataPresent) {
+            try { hasVertexColors = mesh.geometry.isVerticesDataPresent('color'); } catch (e) { }
+        }
+        if (mesh.useVertexColors !== hasVertexColors) {
+            mesh.useVertexColors = hasVertexColors;
+        }
+
         // Already registered? just make sure it's visible and bail
         if (mesh.metadata[addedToSceneFlag]) {
             rendering._octreeManager.setMeshVisibility(mesh, true);
@@ -11873,6 +11886,7 @@ class RenderingModels {
         var rendering = this.rendering;
         var scene = rendering.scene;
         var registerMeshes = options.registerMeshes !== false;
+
         /** @type {import('@babylonjs/core').AbstractMesh[]} */
         var meshes = [];
         /** @type {import('@babylonjs/core').Skeleton[]} */
@@ -11916,6 +11930,9 @@ class RenderingModels {
             }
         }
 
+        // Capture lights before import to detect new ones
+        var lightsBefore = new Set(scene.lights);
+
         try {
             // Load the model; Babylon returns a bundle of meshes/skeletons/animation groups
             var result = await sceneLoader.SceneLoader.ImportMeshAsync('', '', url, scene);
@@ -11923,6 +11940,11 @@ class RenderingModels {
             meshes = result.meshes || [];
             skeletons = result.skeletons || [];
             animationGroups = result.animationGroups || [];
+
+            // Dispose any lights that came with the model
+            // GLB files can include lights nested under TransformNodes that don't appear in result.lights
+            var lightsToDispose = scene.lights.filter(l => !lightsBefore.has(l));
+            lightsToDispose.forEach(l => { try { l.dispose(); } catch (e) { } });
 
             if (meshes.length === 0) {
                 throw new Error('No meshes found in model: ' + url)
