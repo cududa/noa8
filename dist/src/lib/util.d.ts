@@ -30,3 +30,32 @@ export class LocationQueue {
     copyFrom(queue: any): void;
     sortByDistance(locToDist: any, reverse?: boolean): void;
 }
+/** @internal */
+export class VoxelLocationQueue {
+    /**
+     * @param {number} size - Chunk size
+     */
+    constructor(size: number);
+    /** @type {number} */
+    size: number;
+    /** @type {number} */
+    sizeSquared: number;
+    /** @type {number[]} */
+    arr: number[];
+    /** @type {Map<number, boolean>} */
+    hash: Map<number, boolean>;
+    /**
+     * @param {(i: number, j: number, k: number, packed: number) => void} cb
+     * @param {*} [thisArg]
+     */
+    forEach(cb: (i: number, j: number, k: number, packed: number) => void, thisArg?: any): void;
+    includes(i: any, j: any, k: any): boolean;
+    add(i: any, j: any, k: any, toFront?: boolean): void;
+    removeByIndex(ix: any): void;
+    remove(i: any, j: any, k: any): void;
+    count(): number;
+    isEmpty(): boolean;
+    empty(): void;
+    pop(): number;
+    _pack(i: any, j: any, k: any): any;
+}

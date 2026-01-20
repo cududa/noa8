@@ -230,6 +230,102 @@ export class LocationQueue {
     }
 }
 
+/*
+ *
+ *      VoxelLocationQueue - simple array of packed voxel indexes,
+ *      backed by a hash for O(1) existence checks.
+ *      removals by value are O(n).
+ *
+ */
+
+/** @internal */
+export class VoxelLocationQueue {
+    /**
+     * @param {number} size - Chunk size
+     */
+    constructor(size) {
+        /** @type {number} */
+        this.size = size
+
+        /** @type {number} */
+        this.sizeSquared = size * size
+
+        /** @type {number[]} */
+        this.arr = []
+
+        /** @type {Map<number, boolean>} */
+        this.hash = new Map()
+    }
+
+    /**
+     * @param {(i: number, j: number, k: number, packed: number) => void} cb
+     * @param {*} [thisArg]
+     */
+    forEach(cb, thisArg) {
+        var size = this.size
+        var sizeSquared = this.sizeSquared
+        for (var ix = 0; ix < this.arr.length; ix++) {
+            var packed = this.arr[ix]
+            var k = Math.floor(packed / sizeSquared)
+            var rem = packed - k * sizeSquared
+            var j = Math.floor(rem / size)
+            var i = rem - j * size
+            cb.call(thisArg, i, j, k, packed)
+        }
+    }
+
+    includes(i, j, k) {
+        var id = this._pack(i, j, k)
+        return this.hash.has(id)
+    }
+
+    add(i, j, k, toFront = false) {
+        var id = this._pack(i, j, k)
+        if (this.hash.has(id)) return
+        if (toFront) {
+            this.arr.unshift(id)
+        } else {
+            this.arr.push(id)
+        }
+        this.hash.set(id, true)
+    }
+
+    removeByIndex(ix) {
+        var id = this.arr[ix]
+        this.hash.delete(id)
+        this.arr.splice(ix, 1)
+    }
+
+    remove(i, j, k) {
+        var id = this._pack(i, j, k)
+        if (!this.hash.has(id)) return
+        this.hash.delete(id)
+        for (var ix = 0; ix < this.arr.length; ix++) {
+            if (id === this.arr[ix]) {
+                this.arr.splice(ix, 1)
+                return
+            }
+        }
+        throw 'internal bug with voxel location queue - hash value overlapped'
+    }
+
+    count() { return this.arr.length }
+    isEmpty() { return (this.arr.length === 0) }
+    empty() {
+        this.arr = []
+        this.hash.clear()
+    }
+    pop() {
+        var id = this.arr.pop()
+        this.hash.delete(id)
+        return id
+    }
+
+    _pack(i, j, k) {
+        return i + this.size * (j + this.size * k)
+    }
+}
+
 // internal helper for preceding class
 function sortLocationArrByDistance(arr, distFn, reverse) {
     var hash = {}

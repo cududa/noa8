@@ -75,8 +75,8 @@ export class Chunk {
     _neighborCount: number;
     /** @internal @type {number} - Number of times this chunk has been meshed */
     _timesMeshed: number;
-    /** @internal @type {LocationQueue} - Queue of voxels with block handlers */
-    _blockHandlerLocs: LocationQueue;
+    /** @internal @type {VoxelLocationQueue} - Queue of voxels with block handlers */
+    _blockHandlerLocs: VoxelLocationQueue;
     /**
      * Update the voxel data array with new data.
      * @internal
@@ -123,4 +123,4 @@ export class Chunk {
     dispose(): void;
 }
 export type NdArray = any;
-import { LocationQueue } from './util';
+import { VoxelLocationQueue } from './util';

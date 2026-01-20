@@ -3,7 +3,7 @@
  * @module chunk
  */
 
-import { LocationQueue } from './util'
+import { VoxelLocationQueue } from './util'
 import ndarray from 'ndarray'
 
 /** @typedef {import('ndarray').NdArray} NdArray */
@@ -132,8 +132,8 @@ export class Chunk {
         /** @internal @type {number} - Number of times this chunk has been meshed */
         this._timesMeshed = 0
 
-        /** @internal @type {LocationQueue} - Queue of voxels with block handlers */
-        this._blockHandlerLocs = new LocationQueue()
+        /** @internal @type {VoxelLocationQueue} - Queue of voxels with block handlers */
+        this._blockHandlerLocs = new VoxelLocationQueue(size)
 
         // passes through voxel contents, calling block handlers etc.
         scanVoxelData(this)
@@ -423,7 +423,7 @@ function scanVoxelData(chunk) {
 function callAllBlockHandlers(chunk, type) {
     var voxels = chunk.voxels
     var handlerLookup = chunk.noa.registry._blockHandlerLookup
-    chunk._blockHandlerLocs.arr.forEach(([i, j, k]) => {
+    chunk._blockHandlerLocs.forEach((i, j, k) => {
         var id = voxels.get(i, j, k)
         callBlockHandler(chunk, handlerLookup[id], type, i, j, k)
     })
