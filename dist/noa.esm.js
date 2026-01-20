@@ -9010,158 +9010,185 @@ function makeProfileHook(every, title = '', filter) {
     return () => { }
 }
 
-/*
- *
- *          Object meshing
- * 
- *      Per-chunk handling of the creation/disposal of static meshes
- *      associated with particular voxel IDs
- * 
- * 
-*/
+/**
+ * Object meshing module - per-chunk handling of static meshes for voxel IDs.
+ * @module objectMesher
+ */
 
 
-/** 
+/** Metadata flag for object base meshes */
+var objectMeshFlag = 'noa_object_base_mesh';
+
+/**
+ * Handles per-chunk creation/disposal of static meshes associated with voxel IDs.
  * @internal
- * @param {import('../index').Engine} noa
-*/
-function ObjectMesher(noa) {
+ */
+class ObjectMesher {
+    /**
+     * @internal
+     * @param {import('../index').Engine} noa
+     */
+    constructor(noa) {
+        /** @internal @type {import('../index').Engine} */
+        this._noa = noa;
 
-    // transform node for all instance meshes to be parented to
-    this.rootNode = new TransformNode('objectMeshRoot', noa.rendering.scene);
+        /** @type {TransformNode} - Root node for all instance meshes */
+        this.rootNode = new TransformNode('objectMeshRoot', noa.rendering.scene);
 
-    // tracking rebase amount inside matrix data
-    var rebaseOffset = [0, 0, 0];
+        /** @type {Mesh[]} - List of known base meshes */
+        this.allBaseMeshes = [];
 
-    // flag to trigger a rebuild after a chunk is disposed
-    var rebuildNextTick = false;
+        /** @internal @type {number[]} - Tracking rebase amount inside matrix data */
+        this._rebaseOffset = [0, 0, 0];
 
-    // mock object to pass to customMesh handler, to get transforms
-    var transformObj = new TransformNode('');
+        /** @internal @type {boolean} - Flag to trigger rebuild after chunk disposal */
+        this._rebuildNextTick = false;
 
-    // list of known base meshes
-    this.allBaseMeshes = [];
+        /** @internal @type {TransformNode} - Mock object for customMesh handler transforms */
+        this._transformObj = new TransformNode('');
 
-    // internal storage of instance managers, keyed by ID
-    // has check to dedupe by mesh, since babylon chokes on
-    // separate sets of instances for the same mesh/clone/geometry
-    var managers = {};
-    var getManager = (id) => {
-        if (managers[id]) return managers[id]
-        var mesh = noa.registry._blockMeshLookup[id];
-        for (var id2 in managers) {
-            var prev = managers[id2].mesh;
+        /** @internal @type {Object.<number, InstanceManager>} - Instance managers keyed by block ID */
+        this._managers = {};
+
+        /** @internal @type {number} - Unique key seed for chunk instance keys */
+        this._nextChunkKey = 1;
+
+        /** @internal @type {number} - Packed key stride (chunk volume) */
+        this._chunkKeyStride = 0;
+    }
+
+    /**
+     * Get or create an InstanceManager for the given block ID.
+     * Dedupes by mesh since Babylon chokes on separate instance sets for same geometry.
+     * @internal
+     * @param {number} id - Block ID
+     * @returns {InstanceManager}
+     */
+    _getManager(id) {
+        if (this._managers[id]) return this._managers[id]
+        var mesh = this._noa.registry._blockMeshLookup[id];
+        for (var id2 in this._managers) {
+            var prev = this._managers[id2].mesh;
             if (prev === mesh || (prev.geometry === mesh.geometry)) {
-                return managers[id] = managers[id2]
+                return this._managers[id] = this._managers[id2]
             }
         }
         this.allBaseMeshes.push(mesh);
         if (!mesh.metadata) mesh.metadata = {};
         mesh.metadata[objectMeshFlag] = true;
-        return managers[id] = new InstanceManager(noa, mesh)
-    };
-    var objectMeshFlag = 'noa_object_base_mesh';
+        return this._managers[id] = new InstanceManager(this._noa, mesh)
+    }
 
+    /**
+     * Initialize chunk properties for object meshing.
+     * @param {import('./chunk').Chunk} chunk
+     */
+    initChunk(chunk) {
+        chunk._objectBlocks = new Map();
+        if (!this._chunkKeyStride) {
+            this._chunkKeyStride = chunk.size * chunk.size * chunk.size;
+        }
+        chunk._objectKeyBase = this._nextChunkKey * this._chunkKeyStride;
+        this._nextChunkKey++;
+    }
 
-
-    /*
-     * 
-     *      public API
-     * 
-    */
-
-
-    // add any properties that will get used for meshing
-    this.initChunk = function (chunk) {
-        chunk._objectBlocks = {};
-    };
-
-
-    // called by world when an object block is set or cleared
-    this.setObjectBlock = function (chunk, blockID, i, j, k) {
+    /**
+     * Handle an object block being set or cleared.
+     * Called by world when an object block changes.
+     * @param {import('./chunk').Chunk} chunk
+     * @param {number} blockID - New block ID (0 if clearing)
+     * @param {number} i - Local x coordinate
+     * @param {number} j - Local y coordinate
+     * @param {number} k - Local z coordinate
+     */
+    setObjectBlock(chunk, blockID, i, j, k) {
         var x = chunk.x + i;
         var y = chunk.y + j;
         var z = chunk.z + k;
-        var key = `${x}:${y}:${z}`;
+        var stride = chunk.size;
+        var localIndex = i + stride * (j + stride * k);
+        var key = chunk._objectKeyBase + localIndex;
+        var objectBlocks = /** @type {Map<number, number>} */ (chunk._objectBlocks);
 
-        var oldID = chunk._objectBlocks[key] || 0;
-        if (oldID === blockID) return // should be impossible
+        var oldID = objectBlocks.get(localIndex) || 0;
+        if (oldID === blockID) return
         if (oldID > 0) {
-            var oldMgr = getManager(oldID);
+            var oldMgr = this._getManager(oldID);
             oldMgr.removeInstance(chunk, key);
         }
 
         if (blockID > 0) {
-            // if there's a block event handler, call it with
-            // a mock object so client can add transforms
-            var handlers = noa.registry._blockHandlerLookup[blockID];
+            var handlers = this._noa.registry._blockHandlerLookup[blockID];
             var onCreate = handlers && handlers.onCustomMeshCreate;
             if (onCreate) {
-                transformObj.position.copyFromFloats(0.5, 0, 0.5);
-                transformObj.scaling.setAll(1);
-                transformObj.rotation.setAll(0);
-                onCreate(transformObj, x, y, z);
+                this._transformObj.position.copyFromFloats(0.5, 0, 0.5);
+                this._transformObj.scaling.setAll(1);
+                this._transformObj.rotation.setAll(0);
+                onCreate(this._transformObj, x, y, z);
             }
-            var mgr = getManager(blockID);
-            var xform = (onCreate) ? transformObj : null;
-            mgr.addInstance(chunk, key, i, j, k, xform, rebaseOffset);
+            var mgr = this._getManager(blockID);
+            var xform = (onCreate) ? this._transformObj : null;
+            mgr.addInstance(chunk, key, i, j, k, xform, this._rebaseOffset);
         }
 
-        if (oldID > 0 && !blockID) delete chunk._objectBlocks[key];
-        if (blockID > 0) chunk._objectBlocks[key] = blockID;
-    };
+        if (oldID > 0 && !blockID) objectBlocks.delete(localIndex);
+        if (blockID > 0) objectBlocks.set(localIndex, blockID);
+    }
 
+    /**
+     * Rebuild dirty instance meshes.
+     * Called by world when objects have been updated.
+     */
+    buildObjectMeshes() {
 
-
-    // called by world when it knows that objects have been updated
-    this.buildObjectMeshes = function () {
-
-        for (var id in managers) {
-            var mgr = managers[id];
+        for (var id in this._managers) {
+            var mgr = this._managers[id];
             mgr.updateMatrix();
             if (mgr.count === 0) mgr.dispose();
-            if (mgr.disposed) delete managers[id];
+            if (mgr.disposed) delete this._managers[id];
         }
-    };
+    }
 
-
-
-    // called by world at end of chunk lifecycle
-    this.disposeChunk = function (chunk) {
-        for (var key in chunk._objectBlocks) {
-            var id = chunk._objectBlocks[key];
+    /**
+     * Clean up chunk's object blocks at end of chunk lifecycle.
+     * @param {import('./chunk').Chunk} chunk
+     */
+    disposeChunk(chunk) {
+        var objectBlocks = /** @type {Map<number, number>} */ (chunk._objectBlocks);
+        for (var [localIndex, id] of objectBlocks) {
             if (id > 0) {
-                var mgr = getManager(id);
+                var mgr = this._getManager(id);
+                var key = chunk._objectKeyBase + localIndex;
                 mgr.removeInstance(chunk, key);
             }
         }
         chunk._objectBlocks = null;
+        this._rebuildNextTick = true;
+    }
 
-        // since some instance managers will have been updated
-        rebuildNextTick = true;
-    };
-
-
-
-    // tick handler catches case where objects are dirty due to disposal
-    this.tick = function () {
-        if (rebuildNextTick) {
+    /**
+     * Tick handler - catches case where objects are dirty due to disposal.
+     */
+    tick() {
+        if (this._rebuildNextTick) {
             this.buildObjectMeshes();
-            rebuildNextTick = false;
+            this._rebuildNextTick = false;
         }
-    };
+    }
 
+    /**
+     * Handle world origin rebase.
+     * @internal
+     * @param {number[]} delta - Rebase offset [x, y, z]
+     */
+    _rebaseOrigin(delta) {
+        this._rebaseOffset[0] += delta[0];
+        this._rebaseOffset[1] += delta[1];
+        this._rebaseOffset[2] += delta[2];
 
-
-    // world rebase handler
-    this._rebaseOrigin = function (delta) {
-        rebaseOffset[0] += delta[0];
-        rebaseOffset[1] += delta[1];
-        rebaseOffset[2] += delta[2];
-
-        for (var id1 in managers) managers[id1].rebased = false;
-        for (var id2 in managers) {
-            var mgr = managers[id2];
+        for (var id1 in this._managers) this._managers[id1].rebased = false;
+        for (var id2 in this._managers) {
+            var mgr = this._managers[id2];
             if (mgr.rebased) continue
             for (var i = 0; i < mgr.count; i++) {
                 var ix = i << 4;
@@ -9172,162 +9199,183 @@ function ObjectMesher(noa) {
             mgr.rebased = true;
             mgr.dirty = true;
         }
-        rebuildNextTick = true;
-    };
-
+        this._rebuildNextTick = true;
+    }
 }
 
+/**
+ * Manager class for thin instances of a given object block ID.
+ * @internal
+ */
+class InstanceManager {
+    /**
+     * @param {import('../index').Engine} noa
+     * @param {Mesh} mesh
+     */
+    constructor(noa, mesh) {
+        /** @type {import('../index').Engine} */
+        this.noa = noa;
 
+        /** @type {Mesh} */
+        this.mesh = mesh;
 
+        /** @type {Float32Array|null} */
+        this.buffer = null;
 
+        /** @type {number} */
+        this.capacity = 0;
 
+        /** @type {number} */
+        this.count = 0;
 
+        /** @type {boolean} */
+        this.dirty = false;
 
+        /** @type {boolean} */
+        this.rebased = true;
 
+        /** @type {boolean} */
+        this.disposed = false;
 
+        /** @type {Map<number, number>|null} - Map keys (locations) to buffer indices */
+        this.keyToIndex = new Map();
 
+        /** @type {Float64Array|null} - Map buffer locations to keys */
+        this.locToKey = new Float64Array(0);
 
+        // Prepare mesh for rendering
+        this.mesh.position.setAll(0);
+        this.mesh.parent = noa._objectMesher.rootNode;
+        this.noa.rendering.addMeshToScene(this.mesh, false);
+        this.noa.emit('addingTerrainMesh', this.mesh);
+        this.mesh.isPickable = false;
+        this.mesh.doNotSyncBoundingInfo = true;
+        this.mesh.alwaysSelectAsActiveMesh = true;
+    }
 
+    /**
+     * Clean up and dispose the mesh.
+     */
+    dispose() {
+        if (this.disposed) return
+        this.mesh.thinInstanceCount = 0;
+        this.setCapacity(0);
+        this.noa.emit('removingTerrainMesh', this.mesh);
+        this.noa.rendering.setMeshVisibility(this.mesh, false);
+        this.mesh.dispose();
+        this.mesh = null;
+        this.keyToIndex = null;
+        this.locToKey = null;
+        this.disposed = true;
+        this.noa = null;
+    }
 
+    /**
+     * Add an instance at the given location.
+     * @param {import('./chunk').Chunk} chunk
+     * @param {number} key - Location key
+     * @param {number} i - Local x coordinate
+     * @param {number} j - Local y coordinate
+     * @param {number} k - Local z coordinate
+     * @param {TransformNode|null} transform - Optional transform from handler
+     * @param {number[]} rebaseVec - Current rebase offset
+     */
+    addInstance(chunk, key, i, j, k, transform, rebaseVec) {
+        maybeExpandBuffer(this);
+        var ix = this.count << 4;
+        var locToKey = /** @type {Float64Array} */ (this.locToKey);
+        var keyToIndex = /** @type {Map<number, number>} */ (this.keyToIndex);
+        locToKey[this.count] = key;
+        keyToIndex.set(key, ix);
+        if (transform) {
+            transform.position.x += (chunk.x - rebaseVec[0]) + i;
+            transform.position.y += (chunk.y - rebaseVec[1]) + j;
+            transform.position.z += (chunk.z - rebaseVec[2]) + k;
+            var worldMatrix = transform.computeWorldMatrix(true);
+            worldMatrix.copyToArray(this.buffer, ix);
+        } else {
+            var matArray = tempMatrixArray;
+            matArray[12] = (chunk.x - rebaseVec[0]) + i + 0.5;
+            matArray[13] = (chunk.y - rebaseVec[1]) + j;
+            matArray[14] = (chunk.z - rebaseVec[2]) + k + 0.5;
+            copyMatrixData(matArray, 0, this.buffer, ix);
+        }
+        this.count++;
+        this.dirty = true;
+    }
 
+    /**
+     * Remove an instance by key.
+     * @param {import('./chunk').Chunk} chunk
+     * @param {number} key - Location key
+     */
+    removeInstance(chunk, key) {
+        var keyToIndex = /** @type {Map<number, number>} */ (this.keyToIndex);
+        var locToKey = /** @type {Float64Array} */ (this.locToKey);
+        var remIndex = keyToIndex.get(key);
+        if (!(remIndex >= 0)) throw 'tried to remove object instance not in storage'
+        keyToIndex.delete(key);
+        var remLoc = remIndex >> 4;
+        // Copy tail instance's data to location of one we're removing
+        var tailLoc = this.count - 1;
+        if (remLoc !== tailLoc) {
+            var tailIndex = tailLoc << 4;
+            copyMatrixData(this.buffer, tailIndex, this.buffer, remIndex);
+            // Update key/location structs
+            var tailKey = locToKey[tailLoc];
+            keyToIndex.set(tailKey, remIndex);
+            locToKey[remLoc] = tailKey;
+        }
+        this.count--;
+        this.dirty = true;
+        maybeContractBuffer(this);
+    }
+
+    /**
+     * Push buffer updates to mesh.
+     */
+    updateMatrix() {
+        if (!this.dirty) return
+        this.mesh.thinInstanceCount = this.count;
+        this.mesh.thinInstanceBufferUpdated('matrix');
+        this.mesh.isVisible = (this.count > 0);
+        this.dirty = false;
+    }
+
+    /**
+     * Resize the instance buffer.
+     * @param {number} [size=4] - New capacity
+     */
+    setCapacity(size = 4) {
+        this.capacity = size;
+        if (size === 0) {
+            this.buffer = null;
+        } else {
+            var newBuff = new Float32Array(this.capacity * 16);
+            if (this.buffer) {
+                var len = Math.min(this.buffer.length, newBuff.length);
+                for (var i = 0; i < len; i++) newBuff[i] = this.buffer[i];
+            }
+            this.buffer = newBuff;
+        }
+        var newLocToKey = new Float64Array(this.capacity);
+        if (this.locToKey) {
+            var keyLen = Math.min(this.locToKey.length, newLocToKey.length);
+            newLocToKey.set(this.locToKey.subarray(0, keyLen));
+        }
+        this.locToKey = newLocToKey;
+        this.mesh.thinInstanceSetBuffer('matrix', this.buffer);
+        this.updateMatrix();
+    }
+}
 
 /*
- * 
- * 
- *      manager class for thin instances of a given object block ID 
- * 
- * 
-*/
+ *
+ *      Helper functions
+ *
+ */
 
-/** @param {import('../index').Engine} noa*/
-function InstanceManager(noa, mesh) {
-    this.noa = noa;
-    this.mesh = mesh;
-    this.buffer = null;
-    this.capacity = 0;
-    this.count = 0;
-    this.dirty = false;
-    this.rebased = true;
-    this.disposed = false;
-    // dual struct to map keys (locations) to buffer locations, and back
-    this.keyToIndex = {};
-    this.locToKey = [];
-    // prepare mesh for rendering
-    this.mesh.position.setAll(0);
-    this.mesh.parent = noa._objectMesher.rootNode;
-    this.noa.rendering.addMeshToScene(this.mesh, false);
-    this.noa.emit('addingTerrainMesh', this.mesh);
-    this.mesh.isPickable = false;
-    this.mesh.doNotSyncBoundingInfo = true;
-    this.mesh.alwaysSelectAsActiveMesh = true;
-}
-
-
-
-InstanceManager.prototype.dispose = function () {
-    if (this.disposed) return
-    this.mesh.thinInstanceCount = 0;
-    this.setCapacity(0);
-    this.noa.emit('removingTerrainMesh', this.mesh);
-    this.noa.rendering.setMeshVisibility(this.mesh, false);
-    this.mesh.dispose();
-    this.mesh = null;
-    this.keyToIndex = null;
-    this.locToKey = null;
-    this.disposed = true;
-    this.noa = null;
-};
-
-
-InstanceManager.prototype.addInstance = function (chunk, key, i, j, k, transform, rebaseVec) {
-    maybeExpandBuffer(this);
-    var ix = this.count << 4;
-    this.locToKey[this.count] = key;
-    this.keyToIndex[key] = ix;
-    if (transform) {
-        transform.position.x += (chunk.x - rebaseVec[0]) + i;
-        transform.position.y += (chunk.y - rebaseVec[1]) + j;
-        transform.position.z += (chunk.z - rebaseVec[2]) + k;
-        transform.computeWorldMatrix(true);
-        var xformArr = transform._localMatrix._m;
-        copyMatrixData(xformArr, 0, this.buffer, ix);
-    } else {
-        var matArray = tempMatrixArray;
-        matArray[12] = (chunk.x - rebaseVec[0]) + i + 0.5;
-        matArray[13] = (chunk.y - rebaseVec[1]) + j;
-        matArray[14] = (chunk.z - rebaseVec[2]) + k + 0.5;
-        copyMatrixData(matArray, 0, this.buffer, ix);
-    }
-    this.count++;
-    this.dirty = true;
-};
-
-
-InstanceManager.prototype.removeInstance = function (chunk, key) {
-    var remIndex = this.keyToIndex[key];
-    if (!(remIndex >= 0)) throw 'tried to remove object instance not in storage'
-    delete this.keyToIndex[key];
-    var remLoc = remIndex >> 4;
-    // copy tail instance's data to location of one we're removing
-    var tailLoc = this.count - 1;
-    if (remLoc !== tailLoc) {
-        var tailIndex = tailLoc << 4;
-        copyMatrixData(this.buffer, tailIndex, this.buffer, remIndex);
-        // update key/location structs
-        var tailKey = this.locToKey[tailLoc];
-        this.keyToIndex[tailKey] = remIndex;
-        this.locToKey[remLoc] = tailKey;
-    }
-    this.count--;
-    this.dirty = true;
-    maybeContractBuffer(this);
-};
-
-
-InstanceManager.prototype.updateMatrix = function () {
-    if (!this.dirty) return
-    this.mesh.thinInstanceCount = this.count;
-    this.mesh.thinInstanceBufferUpdated('matrix');
-    this.mesh.isVisible = (this.count > 0);
-    this.dirty = false;
-};
-
-
-
-InstanceManager.prototype.setCapacity = function (size = 4) {
-    this.capacity = size;
-    if (size === 0) {
-        this.buffer = null;
-    } else {
-        var newBuff = new Float32Array(this.capacity * 16);
-        if (this.buffer) {
-            var len = Math.min(this.buffer.length, newBuff.length);
-            for (var i = 0; i < len; i++) newBuff[i] = this.buffer[i];
-        }
-        this.buffer = newBuff;
-    }
-    this.mesh.thinInstanceSetBuffer('matrix', this.buffer);
-    this.updateMatrix();
-};
-
-
-function maybeExpandBuffer(mgr) {
-    if (mgr.count < mgr.capacity) return
-    var size = Math.max(8, mgr.capacity * 2);
-    mgr.setCapacity(size);
-}
-
-function maybeContractBuffer(mgr) {
-    if (mgr.count > mgr.capacity * 0.4) return
-    if (mgr.capacity < 100) return
-    mgr.setCapacity(Math.round(mgr.capacity / 2));
-    mgr.locToKey.length = Math.min(mgr.locToKey.length, mgr.capacity);
-}
-
-
-
-// helpers
-
+/** Identity matrix template for new instances */
 var tempMatrixArray = [
     1.0, 0.0, 0.0, 0.0,
     0.0, 1.0, 0.0, 0.0,
@@ -9335,6 +9383,33 @@ var tempMatrixArray = [
     0.0, 0.0, 0.0, 1.0,
 ];
 
+/**
+ * Expand buffer if at capacity.
+ * @param {InstanceManager} mgr
+ */
+function maybeExpandBuffer(mgr) {
+    if (mgr.count < mgr.capacity) return
+    var size = Math.max(8, mgr.capacity * 2);
+    mgr.setCapacity(size);
+}
+
+/**
+ * Contract buffer if underutilized.
+ * @param {InstanceManager} mgr
+ */
+function maybeContractBuffer(mgr) {
+    if (mgr.count > mgr.capacity * 0.4) return
+    if (mgr.capacity < 100) return
+    mgr.setCapacity(Math.round(mgr.capacity / 2));
+}
+
+/**
+ * Copy 16 floats of matrix data between arrays.
+ * @param {ArrayLike<number>} src
+ * @param {number} srcOff
+ * @param {Float32Array} dest
+ * @param {number} destOff
+ */
 function copyMatrixData(src, srcOff, dest, destOff) {
     for (var i = 0; i < 16; i++) dest[destOff + i] = src[srcOff + i];
 }
@@ -9953,6 +10028,7 @@ class GreedyMesher {
         var cs = chunk.size;
         var noa = this.parent.noa;
         var matManager = this.parent._matManager;
+        var wholeLayerVoxel = /** @type {Int32Array} */ (chunk._wholeLayerVoxel);
 
         // terrain ID accessor can be overridden for hacky reasons
         var realGetTerrainID = matManager.getTerrainMatId.bind(matManager);
@@ -9972,7 +10048,7 @@ class GreedyMesher {
             var v = (d === 1) ? 0 : 1;
 
             // transposed ndarrays of nearby chunk voxels (self and neighbors)
-            var nabVoxelsArr = chunk._neighbors.data.map(c => {
+            var nabVoxelsArr = chunk._neighbors.map(c => {
                 if (c && c.voxels) return c.voxels.transpose(d, u, v)
                 return null
             });
@@ -10014,14 +10090,14 @@ class GreedyMesher {
             for (var i = 0; i < cs - 1; i++) {
                 // maybe skip y axis, if both layers are all the same voxel
                 if (d === 1) {
-                    var v1 = chunk._wholeLayerVoxel[i];
-                    if (v1 >= 0 && v1 === chunk._wholeLayerVoxel[i + 1]) {
+                    var v1 = wholeLayerVoxel[i];
+                    if (v1 >= 0 && v1 === wholeLayerVoxel[i + 1]) {
                         continue
                     }
                 }
 
                 // pass in layer array for skip checks, only if not already checked
-                var layerVoxRef = (d === 1) ? null : chunk._wholeLayerVoxel;
+                var layerVoxRef = (d === 1) ? null : wholeLayerVoxel;
 
                 var nf = this._constructMeshMask(d, here, i, here, i + 1, noa, layerVoxRef);
                 if (nf > 0) {
@@ -13493,249 +13569,357 @@ class Physics extends Physics$1 {
 
 }
 
-/* 
- * 
- *   Chunk
- * 
- *  Stores and manages voxel ids and flags for each voxel within chunk
- * 
+/**
+ * Chunk module - stores and manages voxel IDs and flags for each voxel within a chunk.
+ * @module chunk
  */
 
 
+/** @typedef {import('ndarray').NdArray} NdArray */
 
+const NO_WHOLE_LAYER_SENTINEL = -1;
+const NEIGHBOR_CENTER_INDEX = 13;
 
-
-/*
- *
- *    Chunk constructor
- *
+/**
+ * Calculate the flat neighbor array index for a given offset.
+ * @param {number} di
+ * @param {number} dj
+ * @param {number} dk
+ * @returns {number}
  */
-
-/** @param {import('../index').Engine} noa */
-function Chunk(noa, requestID, ci, cj, ck, size, dataArray, fillVoxelID = -1) {
-    this.noa = noa;
-    this.isDisposed = false;
-
-    // arbitrary data passed in by client when generating world
-    this.userData = null;
-
-    // voxel data and properties
-    this.requestID = requestID;     // id sent to game client
-    this.voxels = dataArray;
-    this.i = ci;
-    this.j = cj;
-    this.k = ck;
-    this.size = size;
-    this.x = ci * size;
-    this.y = cj * size;
-    this.z = ck * size;
-    this.pos = [this.x, this.y, this.z];
-
-    // flags to track if things need re-meshing
-    this._terrainDirty = false;
-    this._objectsDirty = false;
-
-    // inits state of terrain / object meshing
-    this._terrainMeshes = [];
-    noa._terrainMesher.initChunk(this);
-    noa._objectMesher.initChunk(this);
-
-    this._isFull = false;
-    this._isEmpty = false;
-
-    this._wholeLayerVoxel = Array(size).fill(-1);
-    if (fillVoxelID >= 0) {
-        this.voxels.data.fill(fillVoxelID, 0, this.voxels.size);
-        this._wholeLayerVoxel.fill(fillVoxelID);
-    }
-
-    // references to neighboring chunks, if they exist (filled in by `world`)
-    var narr = Array.from(Array(27), () => null);
-    this._neighbors = ndarray$1(narr, [3, 3, 3]).lo(1, 1, 1);
-    this._neighbors.set(0, 0, 0, this);
-    this._neighborCount = 0;
-    this._timesMeshed = 0;
-
-    // location queue of voxels in this chunk with block handlers (assume it's rare)
-    /** @internal */
-    this._blockHandlerLocs = new LocationQueue();
-
-    // passes through voxel contents, calling block handlers etc.
-    scanVoxelData(this);
+function getNeighborIndex(di, dj, dk) {
+    return (di + 1) * 9 + (dj + 1) * 3 + (dk + 1)
 }
 
-
-// expose logic internally to create and update the voxel data array
-Chunk._createVoxelArray = function (size) {
-    var arr = new Uint16Array(size * size * size);
-    return ndarray$1(arr, [size, size, size])
-};
-
-Chunk.prototype._updateVoxelArray = function (dataArray, fillVoxelID = -1) {
-    // dispose current object blocks
-    callAllBlockHandlers(this, 'onUnload');
-    this.noa._objectMesher.disposeChunk(this);
-    this.noa._terrainMesher.disposeChunk(this);
-    this.voxels = dataArray;
-    this._terrainDirty = false;
-    this._objectsDirty = false;
-    this._blockHandlerLocs.empty();
-    this.noa._objectMesher.initChunk(this);
-    this.noa._terrainMesher.initChunk(this);
-
-    if (fillVoxelID >= 0) {
-        this._wholeLayerVoxel.fill(fillVoxelID);
-    } else {
-        this._wholeLayerVoxel.fill(-1);
+var env = (/** @type {any} */ (globalThis)).process?.env;
+if (env && env.NODE_ENV !== 'production') {
+    var centerIndex = getNeighborIndex(0, 0, 0);
+    var negIIndex = getNeighborIndex(-1, 0, 0);
+    var posIIndex = getNeighborIndex(1, 0, 0);
+    var negKIndex = getNeighborIndex(0, 0, -1);
+    if (centerIndex !== 13 || negIIndex !== 4 || posIIndex !== 22 || negKIndex !== 12) {
+        throw new Error('chunk neighbor index mapping mismatch')
     }
+}
 
-    scanVoxelData(this);
-};
-
-
-
-
-
-
-
-
-/*
- *
- *    Chunk API
- *
+/**
+ * Stores and manages voxel IDs and flags for each voxel within a chunk.
  */
+class Chunk {
+    /**
+     * @param {import('../index').Engine} noa
+     * @param {string} requestID - ID sent to game client
+     * @param {number} ci - Chunk index i
+     * @param {number} cj - Chunk index j
+     * @param {number} ck - Chunk index k
+     * @param {number} size - Chunk size
+     * @param {NdArray} dataArray - Voxel data array
+     * @param {number} [fillVoxelID=-1] - ID to fill voxels with, or -1 for no fill
+     */
+    constructor(noa, requestID, ci, cj, ck, size, dataArray, fillVoxelID = -1) {
+        /** @type {import('../index').Engine} */
+        this.noa = noa;
 
-// get/set deal with block IDs, so that this class acts like an ndarray
+        /** @type {boolean} */
+        this.isDisposed = false;
 
-Chunk.prototype.get = function (i, j, k) {
-    return this.voxels.get(i, j, k)
-};
+        /** @type {*} - Arbitrary data passed in by client when generating world */
+        this.userData = null;
 
-Chunk.prototype.getSolidityAt = function (i, j, k) {
-    var solidLookup = this.noa.registry._solidityLookup;
-    return solidLookup[this.voxels.get(i, j, k)]
-};
+        /** @type {string} - ID sent to game client */
+        this.requestID = requestID;
 
-Chunk.prototype.set = function (i, j, k, newID) {
-    var oldID = this.voxels.get(i, j, k);
-    if (newID === oldID) return
+        /** @type {NdArray} */
+        this.voxels = dataArray;
 
-    // update voxel data
-    this.voxels.set(i, j, k, newID);
+        /** @type {number} - Chunk index i */
+        this.i = ci;
 
-    // lookup tables from registry, etc
-    var solidLookup = this.noa.registry._solidityLookup;
-    var objectLookup = this.noa.registry._objectLookup;
-    var opaqueLookup = this.noa.registry._opacityLookup;
-    var handlerLookup = this.noa.registry._blockHandlerLookup;
+        /** @type {number} - Chunk index j */
+        this.j = cj;
 
-    // track invariants about chunk data
-    if (!opaqueLookup[newID]) this._isFull = false;
-    if (newID !== 0) this._isEmpty = false;
-    if (this._wholeLayerVoxel[j] !== newID) this._wholeLayerVoxel[j] = -1;
+        /** @type {number} - Chunk index k */
+        this.k = ck;
 
-    // voxel lifecycle handling
-    var hold = handlerLookup[oldID];
-    var hnew = handlerLookup[newID];
-    if (hold) callBlockHandler(this, hold, 'onUnset', i, j, k);
-    if (hnew) {
-        callBlockHandler(this, hnew, 'onSet', i, j, k);
-        this._blockHandlerLocs.add(i, j, k);
-    } else {
-        this._blockHandlerLocs.remove(i, j, k);
+        /** @type {number} */
+        this.size = size;
+
+        /** @type {number} - World x coordinate */
+        this.x = ci * size;
+
+        /** @type {number} - World y coordinate */
+        this.y = cj * size;
+
+        /** @type {number} - World z coordinate */
+        this.z = ck * size;
+
+        /** @type {number[]} - World position [x, y, z] */
+        this.pos = [this.x, this.y, this.z];
+
+        /** @internal @type {boolean} - Flag to track if terrain needs re-meshing */
+        this._terrainDirty = false;
+
+        /** @internal @type {boolean} - Flag to track if objects need re-meshing */
+        this._objectsDirty = false;
+
+        /** @internal @type {import('@babylonjs/core').Mesh[]} */
+        this._terrainMeshes = [];
+
+        /** @internal @type {Map<number, number>|null} */
+        this._objectBlocks = null;
+
+        /** @internal @type {number} - Base offset for object instance keys */
+        this._objectKeyBase = 0;
+
+        noa._terrainMesher.initChunk(this);
+        noa._objectMesher.initChunk(this);
+
+        /** @internal @type {boolean} - Whether chunk is entirely opaque */
+        this._isFull = false;
+
+        /** @internal @type {boolean} - Whether chunk is entirely air */
+        this._isEmpty = false;
+
+        /** @internal @type {Int32Array|null} - Tracks if a layer has a constant voxel ID */
+        this._wholeLayerVoxel = new Int32Array(size);
+        var wholeLayerVoxel = /** @type {Int32Array} */ (this._wholeLayerVoxel);
+        wholeLayerVoxel.fill(NO_WHOLE_LAYER_SENTINEL);
+
+        if (fillVoxelID >= 0) {
+            this.voxels.data.fill(fillVoxelID, 0, this.voxels.size);
+            wholeLayerVoxel.fill(fillVoxelID);
+        }
+
+        // references to neighboring chunks, if they exist (filled in by `world`)
+        /** @internal @type {Array<Chunk|null>} - References to neighboring chunks */
+        this._neighbors = Array(27).fill(null);
+        this._neighbors[NEIGHBOR_CENTER_INDEX] = this;
+
+        /** @internal @type {number} - Count of neighboring chunks */
+        this._neighborCount = 0;
+
+        /** @internal @type {number} - Number of times this chunk has been meshed */
+        this._timesMeshed = 0;
+
+        /** @internal @type {LocationQueue} - Queue of voxels with block handlers */
+        this._blockHandlerLocs = new LocationQueue();
+
+        // passes through voxel contents, calling block handlers etc.
+        scanVoxelData(this);
     }
 
-    // track object block states
-    var objMesher = this.noa._objectMesher;
-    var objOld = objectLookup[oldID];
-    var objNew = objectLookup[newID];
-    if (objOld) objMesher.setObjectBlock(this, 0, i, j, k);
-    if (objNew) objMesher.setObjectBlock(this, newID, i, j, k);
-
-    // decide dirtiness states
-    var solidityChanged = (solidLookup[oldID] !== solidLookup[newID]);
-    var opacityChanged = (opaqueLookup[oldID] !== opaqueLookup[newID]);
-    var wasTerrain = !objOld && (oldID !== 0);
-    var nowTerrain = !objNew && (newID !== 0);
-
-    if (objOld || objNew) this._objectsDirty = true;
-    if (solidityChanged || opacityChanged || wasTerrain || nowTerrain) {
-        this._terrainDirty = true;
+    /**
+     * Create a new voxel data array for a chunk.
+     * @param {number} size - Chunk size
+     * @returns {NdArray}
+     */
+    static _createVoxelArray(size) {
+        var arr = new Uint16Array(size * size * size);
+        return ndarray$1(arr, [size, size, size])
     }
 
-    if (this._terrainDirty || this._objectsDirty) {
-        this.noa.world._queueChunkForRemesh(this);
+    /**
+     * Update the voxel data array with new data.
+     * @internal
+     * @param {NdArray} dataArray - New voxel data array
+     * @param {number} [fillVoxelID=-1] - ID to fill voxels with, or -1 for no fill
+     */
+    _updateVoxelArray(dataArray, fillVoxelID = -1) {
+        // dispose current object blocks
+        callAllBlockHandlers(this, 'onUnload');
+        this.noa._objectMesher.disposeChunk(this);
+        this.noa._terrainMesher.disposeChunk(this);
+        this.voxels = dataArray;
+        this._terrainDirty = false;
+        this._objectsDirty = false;
+        this._blockHandlerLocs.empty();
+        this.noa._objectMesher.initChunk(this);
+        this.noa._terrainMesher.initChunk(this);
+
+        var wholeLayerVoxel = /** @type {Int32Array} */ (this._wholeLayerVoxel);
+        if (fillVoxelID >= 0) {
+            wholeLayerVoxel.fill(fillVoxelID);
+        } else {
+            wholeLayerVoxel.fill(NO_WHOLE_LAYER_SENTINEL);
+        }
+
+        scanVoxelData(this);
     }
 
-    // neighbors only affected if solidity or opacity changed on an edge
-    if (solidityChanged || opacityChanged) {
-        var edge = this.size - 1;
-        var imin = (i === 0) ? -1 : 0;
-        var jmin = (j === 0) ? -1 : 0;
-        var kmin = (k === 0) ? -1 : 0;
-        var imax = (i === edge) ? 1 : 0;
-        var jmax = (j === edge) ? 1 : 0;
-        var kmax = (k === edge) ? 1 : 0;
-        for (var ni = imin; ni <= imax; ni++) {
-            for (var nj = jmin; nj <= jmax; nj++) {
-                for (var nk = kmin; nk <= kmax; nk++) {
-                    if ((ni | nj | nk) === 0) continue
-                    var nab = this._neighbors.get(ni, nj, nk);
-                    if (!nab) continue
-                    nab._terrainDirty = true;
-                    this.noa.world._queueChunkForRemesh(nab);
+    /**
+     * Get the block ID at a local position within the chunk.
+     * @param {number} i - Local x coordinate
+     * @param {number} j - Local y coordinate
+     * @param {number} k - Local z coordinate
+     * @returns {number} Block ID at the position
+     */
+    get(i, j, k) {
+        return this.voxels.get(i, j, k)
+    }
+
+    /**
+     * Get the solidity value at a local position within the chunk.
+     * @param {number} i - Local x coordinate
+     * @param {number} j - Local y coordinate
+     * @param {number} k - Local z coordinate
+     * @returns {boolean} Solidity value at the position
+     */
+    getSolidityAt(i, j, k) {
+        var solidLookup = this.noa.registry._solidityLookup;
+        return solidLookup[this.voxels.get(i, j, k)]
+    }
+
+    /**
+     * Set the block ID at a local position within the chunk.
+     * Handles block lifecycle (onSet/onUnset handlers), object blocks,
+     * terrain/object dirty flags, and neighbor chunk updates.
+     * @param {number} i - Local x coordinate
+     * @param {number} j - Local y coordinate
+     * @param {number} k - Local z coordinate
+     * @param {number} newID - New block ID to set
+     */
+    set(i, j, k, newID) {
+        var oldID = this.voxels.get(i, j, k);
+        if (newID === oldID) return
+
+        // update voxel data
+        this.voxels.set(i, j, k, newID);
+
+        // lookup tables from registry, etc
+        var solidLookup = this.noa.registry._solidityLookup;
+        var objectLookup = this.noa.registry._objectLookup;
+        var opaqueLookup = this.noa.registry._opacityLookup;
+        var handlerLookup = this.noa.registry._blockHandlerLookup;
+
+        // track invariants about chunk data
+        if (!opaqueLookup[newID]) this._isFull = false;
+        if (newID !== 0) this._isEmpty = false;
+        var wholeLayerVoxel = /** @type {Int32Array} */ (this._wholeLayerVoxel);
+        if (wholeLayerVoxel[j] !== newID) wholeLayerVoxel[j] = NO_WHOLE_LAYER_SENTINEL;
+
+        // voxel lifecycle handling
+        var hold = handlerLookup[oldID];
+        var hnew = handlerLookup[newID];
+        if (hold) callBlockHandler(this, hold, 'onUnset', i, j, k);
+        if (hnew) {
+            callBlockHandler(this, hnew, 'onSet', i, j, k);
+            this._blockHandlerLocs.add(i, j, k);
+        } else {
+            this._blockHandlerLocs.remove(i, j, k);
+        }
+
+        // track object block states
+        var objMesher = this.noa._objectMesher;
+        var objOld = objectLookup[oldID];
+        var objNew = objectLookup[newID];
+        if (objOld) objMesher.setObjectBlock(this, 0, i, j, k);
+        if (objNew) objMesher.setObjectBlock(this, newID, i, j, k);
+
+        // decide dirtiness states
+        var solidityChanged = (solidLookup[oldID] !== solidLookup[newID]);
+        var opacityChanged = (opaqueLookup[oldID] !== opaqueLookup[newID]);
+        var wasTerrain = !objOld && (oldID !== 0);
+        var nowTerrain = !objNew && (newID !== 0);
+
+        if (objOld || objNew) this._objectsDirty = true;
+        if (solidityChanged || opacityChanged || wasTerrain || nowTerrain) {
+            this._terrainDirty = true;
+        }
+
+        if (this._terrainDirty || this._objectsDirty) {
+            this.noa.world._queueChunkForRemesh(this);
+        }
+
+        // neighbors only affected if solidity or opacity changed on an edge
+        if (solidityChanged || opacityChanged) {
+            var edge = this.size - 1;
+            var imin = (i === 0) ? -1 : 0;
+            var jmin = (j === 0) ? -1 : 0;
+            var kmin = (k === 0) ? -1 : 0;
+            var imax = (i === edge) ? 1 : 0;
+            var jmax = (j === edge) ? 1 : 0;
+            var kmax = (k === edge) ? 1 : 0;
+            for (var ni = imin; ni <= imax; ni++) {
+                for (var nj = jmin; nj <= jmax; nj++) {
+                    for (var nk = kmin; nk <= kmax; nk++) {
+                        if ((ni | nj | nk) === 0) continue
+                        var nab = this._neighbors[getNeighborIndex(ni, nj, nk)];
+                        if (!nab) continue
+                        nab._terrainDirty = true;
+                        this.noa.world._queueChunkForRemesh(nab);
+                    }
                 }
             }
         }
     }
-};
 
+    /**
+     * Update terrain and object meshes if they are dirty.
+     * Called by World when this chunk has been queued for remeshing.
+     */
+    updateMeshes() {
+        if (this._terrainDirty) {
+            this.noa._terrainMesher.meshChunk(this);
+            this._timesMeshed++;
+            this._terrainDirty = false;
+        }
+        if (this._objectsDirty) {
+            this.noa._objectMesher.buildObjectMeshes();
+            this._objectsDirty = false;
+        }
+    }
 
+    /**
+     * Dispose the chunk and clean up all resources.
+     * Calls onUnload handlers for all blocks, disposes meshes,
+     * and nullifies references to allow garbage collection.
+     */
+    dispose() {
+        // look through the data for onUnload handlers
+        callAllBlockHandlers(this, 'onUnload');
+        this._blockHandlerLocs.empty();
 
-// helper to call handler of a given type at a particular xyz
+        // let meshers dispose their stuff
+        this.noa._objectMesher.disposeChunk(this);
+        this.noa._terrainMesher.disposeChunk(this);
+
+        // apparently there's no way to dispose typed arrays, so just null everything
+        this.voxels.data = null;
+        this.voxels = null;
+        this._neighbors = null;
+        this._wholeLayerVoxel = null;
+
+        this.isDisposed = true;
+        this.noa = null;
+    }
+}
+
+/**
+ * Call a block handler of a given type at a particular position.
+ * @param {Chunk} chunk - The chunk containing the block
+ * @param {Object} handlers - Block handler lookup entry
+ * @param {string} type - Handler type ('onSet', 'onUnset', 'onLoad', 'onUnload')
+ * @param {number} i - Local x coordinate
+ * @param {number} j - Local y coordinate
+ * @param {number} k - Local z coordinate
+ */
 function callBlockHandler(chunk, handlers, type, i, j, k) {
     var handler = handlers[type];
     if (!handler) return
     handler(chunk.x + i, chunk.y + j, chunk.z + k);
 }
 
-
-// gets called by World when this chunk has been queued for remeshing
-Chunk.prototype.updateMeshes = function () {
-    if (this._terrainDirty) {
-        this.noa._terrainMesher.meshChunk(this);
-        this._timesMeshed++;
-        this._terrainDirty = false;
-    }
-    if (this._objectsDirty) {
-        this.noa._objectMesher.buildObjectMeshes();
-        this._objectsDirty = false;
-    }
-};
-
-
-
-
-
-
-
-
-
-
-
-
-/*
- * 
- *      Init
- * 
- *  Scans voxel data, processing object blocks and setting chunk flags
- * 
-*/
-
+/**
+ * Scan voxel data, processing object blocks and setting chunk flags.
+ * Sets _isFull, _isEmpty, _terrainDirty, and _objectsDirty flags.
+ * Calls onLoad handlers for blocks that have them.
+ * @param {Chunk} chunk - The chunk to scan
+ */
 function scanVoxelData(chunk) {
     var voxels = chunk.voxels;
     var data = voxels.data;
     var len = voxels.shape[0];
+    var wholeLayerVoxel = /** @type {Int32Array} */ (chunk._wholeLayerVoxel);
     var opaqueLookup = chunk.noa.registry._opacityLookup;
     var handlerLookup = chunk.noa.registry._blockHandlerLookup;
     var objectLookup = chunk.noa.registry._objectLookup;
@@ -13750,7 +13934,7 @@ function scanVoxelData(chunk) {
     for (var j = 0; j < len; ++j) {
 
         // fastest case where whole layer is air/dirt/etc
-        var layerID = chunk._wholeLayerVoxel[j];
+        var layerID = wholeLayerVoxel[j];
         if (layerID >= 0 && !objMesher[layerID] && !handlerLookup[layerID]) {
             if (!opaqueLookup[layerID]) fullyOpaque = false;
             if (layerID !== 0) fullyAir = false;
@@ -13765,7 +13949,7 @@ function scanVoxelData(chunk) {
                 var id = data[index];
 
                 // detect constant layer ID if there is one
-                if (constantID >= 0 && id !== constantID) constantID = -1;
+                if (constantID >= 0 && id !== constantID) constantID = NO_WHOLE_LAYER_SENTINEL;
 
                 // most common cases: air block...
                 if (id === 0) {
@@ -13792,7 +13976,7 @@ function scanVoxelData(chunk) {
             }
         }
 
-        if (constantID >= 0) chunk._wholeLayerVoxel[j] = constantID;
+        if (constantID >= 0) wholeLayerVoxel[j] = constantID;
     }
 
     chunk._isFull = fullyOpaque;
@@ -13800,39 +13984,11 @@ function scanVoxelData(chunk) {
     chunk._terrainDirty = !chunk._isEmpty;
 }
 
-
-
-
-
-
-
-
-
-
-// dispose function - just clears properties and references
-
-Chunk.prototype.dispose = function () {
-    // look through the data for onUnload handlers
-    callAllBlockHandlers(this, 'onUnload');
-    this._blockHandlerLocs.empty();
-
-    // let meshers dispose their stuff
-    this.noa._objectMesher.disposeChunk(this);
-    this.noa._terrainMesher.disposeChunk(this);
-
-    // apparently there's no way to dispose typed arrays, so just null everything
-    this.voxels.data = null;
-    this.voxels = null;
-    this._neighbors.data = null;
-    this._neighbors = null;
-
-    this.isDisposed = true;
-    this.noa = null;
-};
-
-
-
-// helper to call a given handler for all blocks in the chunk
+/**
+ * Call a given handler type for all blocks in the chunk that have handlers.
+ * @param {Chunk} chunk - The chunk to process
+ * @param {string} type - Handler type ('onSet', 'onUnset', 'onLoad', 'onUnload')
+ */
 function callAllBlockHandlers(chunk, type) {
     var voxels = chunk.voxels;
     var handlerLookup = chunk.noa.registry._blockHandlerLookup;
@@ -15247,14 +15403,16 @@ class WorldLifecycle {
                     // flag neighbor, assume terrain needs remeshing
                     if (terrainChanged) neighbor._terrainDirty = true;
                     // update neighbor counts and references, both ways
-                    if (chunk && !chunk._neighbors.get(i, j, k)) {
+                    var chunkNeighborIndex = getNeighborIndex(i, j, k);
+                    if (chunk && !chunk._neighbors[chunkNeighborIndex]) {
                         chunk._neighborCount++;
-                        chunk._neighbors.set(i, j, k, neighbor);
+                        chunk._neighbors[chunkNeighborIndex] = neighbor;
                     }
-                    var nabRef = neighbor._neighbors.get(-i, -j, -k);
+                    var neighborIndex = getNeighborIndex(-i, -j, -k);
+                    var nabRef = neighbor._neighbors[neighborIndex];
                     if (chunk && !nabRef) {
                         neighbor._neighborCount++;
-                        neighbor._neighbors.set(-i, -j, -k, chunk);
+                        neighbor._neighbors[neighborIndex] = chunk;
                         // immediately queue neighbor if it's surrounded
                         if (neighbor._neighborCount === 26) {
                             world._queues.possiblyQueueChunkForMeshing(neighbor);
@@ -15262,7 +15420,7 @@ class WorldLifecycle {
                     }
                     if (!chunk && nabRef) {
                         neighbor._neighborCount--;
-                        neighbor._neighbors.set(-i, -j, -k, null);
+                        neighbor._neighbors[neighborIndex] = null;
                     }
                 }
             }

@@ -3,7 +3,7 @@
  * @module worldLifecycle
  */
 
-import { Chunk } from '../chunk.js'
+import { Chunk, getNeighborIndex } from '../chunk.js'
 import { profile_queues_hook } from './worldDebug.js'
 
 /** Error message for manual chunk loading API */
@@ -224,14 +224,16 @@ export class WorldLifecycle {
                     // flag neighbor, assume terrain needs remeshing
                     if (terrainChanged) neighbor._terrainDirty = true
                     // update neighbor counts and references, both ways
-                    if (chunk && !chunk._neighbors.get(i, j, k)) {
+                    var chunkNeighborIndex = getNeighborIndex(i, j, k)
+                    if (chunk && !chunk._neighbors[chunkNeighborIndex]) {
                         chunk._neighborCount++
-                        chunk._neighbors.set(i, j, k, neighbor)
+                        chunk._neighbors[chunkNeighborIndex] = neighbor
                     }
-                    var nabRef = neighbor._neighbors.get(-i, -j, -k)
+                    var neighborIndex = getNeighborIndex(-i, -j, -k)
+                    var nabRef = neighbor._neighbors[neighborIndex]
                     if (chunk && !nabRef) {
                         neighbor._neighborCount++
-                        neighbor._neighbors.set(-i, -j, -k, chunk)
+                        neighbor._neighbors[neighborIndex] = chunk
                         // immediately queue neighbor if it's surrounded
                         if (neighbor._neighborCount === 26) {
                             world._queues.possiblyQueueChunkForMeshing(neighbor)
@@ -239,7 +241,7 @@ export class WorldLifecycle {
                     }
                     if (!chunk && nabRef) {
                         neighbor._neighborCount--
-                        neighbor._neighbors.set(-i, -j, -k, null)
+                        neighbor._neighbors[neighborIndex] = null
                     }
                 }
             }

@@ -47,6 +47,7 @@ export class GreedyMesher {
         var cs = chunk.size
         var noa = this.parent.noa
         var matManager = this.parent._matManager
+        var wholeLayerVoxel = /** @type {Int32Array} */ (chunk._wholeLayerVoxel)
 
         // terrain ID accessor can be overridden for hacky reasons
         var realGetTerrainID = matManager.getTerrainMatId.bind(matManager)
@@ -66,7 +67,7 @@ export class GreedyMesher {
             var v = (d === 1) ? 0 : 1
 
             // transposed ndarrays of nearby chunk voxels (self and neighbors)
-            var nabVoxelsArr = chunk._neighbors.data.map(c => {
+            var nabVoxelsArr = chunk._neighbors.map(c => {
                 if (c && c.voxels) return c.voxels.transpose(d, u, v)
                 return null
             })
@@ -108,14 +109,14 @@ export class GreedyMesher {
             for (var i = 0; i < cs - 1; i++) {
                 // maybe skip y axis, if both layers are all the same voxel
                 if (d === 1) {
-                    var v1 = chunk._wholeLayerVoxel[i]
-                    if (v1 >= 0 && v1 === chunk._wholeLayerVoxel[i + 1]) {
+                    var v1 = wholeLayerVoxel[i]
+                    if (v1 >= 0 && v1 === wholeLayerVoxel[i + 1]) {
                         continue
                     }
                 }
 
                 // pass in layer array for skip checks, only if not already checked
-                var layerVoxRef = (d === 1) ? null : chunk._wholeLayerVoxel
+                var layerVoxRef = (d === 1) ? null : wholeLayerVoxel
 
                 var nf = this._constructMeshMask(d, here, i, here, i + 1, noa, layerVoxRef)
                 if (nf > 0) {
